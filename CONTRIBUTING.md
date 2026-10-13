@@ -74,7 +74,7 @@ Title the issue with its task code first, then a conventional commit (section 7)
 `<TASK>` is the task code (`F1-NN`, `F2-NN`, `F3-NN` per front, `INT-NN` for joint integration work). The front scope is omitted — the code already says the front. Examples:
 
 ```text
-[F3-07] feat: echo utility
+[F3-09] feat: echo utility
 [F1-03] fix: wait faults on untouched status address
 [INT-01] docs: consolidated report and Substack post
 ```
@@ -113,8 +113,8 @@ Body template:
 
 ## Subtasks
 
-- [ ] Subtask 1 -> branch `feat/f3-07-echo-1`, PR #<n>
-- [ ] Subtask 2 -> branch `test/f3-07-echo-fixtures-1`, PR #<n>
+- [ ] Subtask 1 -> branch `feat/f3-09-echo-1`, PR #<n>
+- [ ] Subtask 2 -> branch `test/f3-09-echo-fixtures-1`, PR #<n>
 ```
 
 Rules:
@@ -163,7 +163,7 @@ Two flows, same naming logic:
 
 Name branches with the issue type, task code, scope slug, and issue number.
 Parentheses are not valid in branch names, so the issue title
-`[F3-07] feat: echo utility` with issue #1 maps to branch `feat/f3-07-echo-1`:
+`[F3-09] feat: echo utility` with issue #1 maps to branch `feat/f3-09-echo-1`:
 
 ```text
 <type>/<task>-<short-slug>-<issue-number>
