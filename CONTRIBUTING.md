@@ -65,12 +65,18 @@ given number of PRs is merged.
 
 ## 4. Issue format
 
-Title the issue like a conventional commit (section 7):
+Title the issue with its task code first, then a conventional commit (section 7):
 
 ```text
-feat(f3): echo utility
-fix(f1): wait faults on untouched status address
-docs(contracts): freeze argv block layout
+[<TASK>] <type>: <short description>
+```
+
+`<TASK>` is the task code (`F1-NN`, `F2-NN`, `F3-NN` per front, `INT-NN` for joint integration work). The front scope is omitted — the code already says the front. Examples:
+
+```text
+[F3-07] feat: echo utility
+[F1-03] fix: wait faults on untouched status address
+[INT-01] docs: consolidated report and Substack post
 ```
 
 Body template:
@@ -107,8 +113,8 @@ Body template:
 
 ## Subtasks
 
-- [ ] Subtask 1 -> branch `feat/f3-echo-utility-12`, PR #<n>
-- [ ] Subtask 2 -> branch `test/f3-echo-fixtures-12`, PR #<n>
+- [ ] Subtask 1 -> branch `feat/f3-07-echo-1`, PR #<n>
+- [ ] Subtask 2 -> branch `test/f3-07-echo-fixtures-1`, PR #<n>
 ```
 
 Rules:
@@ -155,15 +161,16 @@ Two flows, same naming logic:
 - `zepa-machine` fork (kernel, emulator, TUI, assembler): branch off
   `sackOS-paginated`.
 
-Name branches with the issue type, scope slug, and issue number.
+Name branches with the issue type, task code, scope slug, and issue number.
 Parentheses are not valid in branch names, so the issue title
-`feat(f3): echo utility` with issue #12 maps to branch `feat/f3-echo-utility-12`:
+`[F3-07] feat: echo utility` with issue #1 maps to branch `feat/f3-07-echo-1`:
 
 ```text
-<type>/<short-slug>-<issue-number>
+<type>/<task>-<short-slug>-<issue-number>
 ```
 
 - `<type>` mirrors the commit type: `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, or `chore`.
+- `<task>` is the lowercase task code from the issue title (`f3-07`, `int-01`).
 - `<short-slug>` is 2-4 kebab-case words, starting with the front or
   component (`f1-`, `f2-`, `f3-`, `kernel-`, `contracts-`).
 - `<issue-number>` is the GitHub issue the branch implements (the board is
@@ -171,12 +178,12 @@ Parentheses are not valid in branch names, so the issue title
 
 | Prefix | Use | Example |
 |---|---|---|
-| `feat/` | New functionality | `feat/f3-echo-utility-12` |
-| `fix/` | Bug fix | `fix/f1-wait-status-touch-18` |
+| `feat/` | New functionality | `feat/f3-07-echo-1` |
+| `fix/` | Bug fix | `fix/f1-03-wait-status-touch-18` |
 | `refactor/` | Code change without behavior change | `refactor/kernel-schedule-loop-22` |
 | `perf/` | Performance-only change | `perf/tui-refresh-rate-24` |
-| `docs/` | Contracts, issues docs, report drafts | `docs/contracts-argv-v2-21` |
-| `test/` | Fixtures and test-only changes | `test/f3-wc-fixtures-27` |
+| `docs/` | Contracts, issues docs, report drafts | `docs/f3-01-contracts-argv-8` |
+| `test/` | Fixtures and test-only changes | `test/f3-08-wc-fixtures-2` |
 | `chore/` | Pin bumps, tooling | `chore/bump-zepa-machine-sha-30` |
 
 Rules:
@@ -197,7 +204,7 @@ Follow Conventional Commits with a scope:
 ```
 
 - Types: `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `chore`.
-- Scopes: `f1`, `f2`, `f3`, `kernel`, `contracts`, `docs`, `chore`.
+- Scopes: `kernel`, `contracts`, `docs`, `chore`. Use a scope only when it adds information beyond the task code — never repeat the front (`f1`/`f2`/`f3`) already present in `[F-NN]` / `[INT-NN]`.
 - Small commits, imperative mood.
 
 Rules:
@@ -210,10 +217,10 @@ Rules:
 Examples:
 
 ```bash
-feat(f3): echo utility (closes #12, subtask 1)
+feat: echo utility ([F3-07], closes #1, subtask 1)
 fix(kernel): touch wait status slot before syscall
 docs(contracts): freeze read/write numbers
-test(f3): add wc fixtures with hand counts
+test: add wc fixtures with hand counts
 chore: bump zepa-machine to e8fd798
 ```
 
@@ -236,8 +243,8 @@ Title a PR like a commit. Body template:
 - `How to test` must be copy-pasteable: working directory, exact
   `go run -tags kernel . <memory_size> <time_slice>` command, TUI input
   sequence, and expected outputs or exit codes.
-- `Task reference` states the issue and subtasks, for example
-  `Issue #12, subtasks 1-2`. An issue delivered through several PRs
+- `Task reference` states the task code, issue and subtasks, for example
+  `[F3-07] Issue #1, subtasks 1-2`. An issue delivered through several PRs
   closes only on the last validation PR or on a validation comment with
   TUI evidence.
 - `Evidence` is exit codes, TUI memory dumps, or `go test` output.
