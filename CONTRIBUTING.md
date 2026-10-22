@@ -11,10 +11,18 @@ and integrate work across fronts.
 - `zepa-machine` (fork under active development, base branch `sackOS-paginated`)
   holds the ZEPA virtual machine, the sackOS paginated kernel, the
   cross-assembler, and the TUI debugger.
-- Front 1 owns syscalls, the syscall/argv contract, and console.
-  Front 2 owns `exec` and the read-only in-memory filesystem.
-  Front 3 owns the shell loop and the `echo`, `true`, `false`, `pid`, `wc`
-  utilities plus the `help` and `exit` builtins.
+- Front 1 (syscalls, syscall/argv contract, console) is led by @arthurlazevedo.
+  Front 2 (`exec`, the read-only in-memory filesystem) is led by @RailtonDantas.
+  Front 3 (the shell loop, the utilities, and TUI-facing work) is led by
+  @matheusvir, who is also the global lead.
+- Front leads merge pull requests for their own front's attributions, only after the issue is `Validated`. If the merge surfaces conflicts, the lead reports them back to the dev instead of resolving silently.
+- Both integration branches are protected: `zesh/main` and the fork's
+  `zepa-machine/sackOS-paginated` accept only PRs, require one review
+  approval, and block force pushes and deletions. The global lead is exempt
+  as owner and may push or merge directly. For everyone else, merging stays
+  with the front leads as a stated policy (see `12. Roles`); if the rule
+  breaks down in practice, migrating the repos to an organization re-enables
+  per-user merge allowlists.
 - Issues and GitHub Projects are the official task administration.
 
 ## 1. Language
@@ -188,7 +196,7 @@ Parentheses are not valid in branch names, so the issue title
 
 Rules:
 
-- Every branch implements exactly one issue; a large issue may have several branches, one per subtask (see section 4). Never push directly to `main` or to `sackOS-paginated`.
+- Every branch implements exactly one issue; a large issue may have several branches, one per subtask (see section 4). Never push directly to `main` or to `sackOS-paginated` (both are protected: PR and one review approval required) — only the global lead, as owner, pushes and merges directly.
 - Branch from an up-to-date base (`main` for `zesh`, `sackOS-paginated`
   for the `zepa-machine` fork); keep the branch focused on its issue.
 - If the scope changes, open a new issue and a new branch instead of
