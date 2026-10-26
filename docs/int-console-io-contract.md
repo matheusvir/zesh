@@ -10,7 +10,7 @@
 | Code basis | `zepa-machine` @ `e8fd798` (`sackOS-paginated`) |
 | Technical definition owner | Front 1 — @arthurlazevedo |
 | Requirements owner | Front 3 — @matheusvir |
-| Reviewer | @KalebeSouza-dev |
+| Reviewer | @arthurlazevedo |
 
 This document does not redefine the syscall ABI. The syscall ids `read` = 6 and `write` = 7 are frozen in #8; this bridge only states what the TUI side must provide so those calls have a real console behind them. #8's `contracts.md` remains the normative ABI document.
 
