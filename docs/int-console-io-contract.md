@@ -183,6 +183,6 @@ The following are deliberately left open. None of them may be invented by an imp
 |---|---|---|---|
 | Front 1 lead — technical definition | @arthurlazevedo | Accepts/amends §3.2–3.3, owns kernel console plumbing and the interrupt/blocking model | **PENDING** |
 | Front 3 lead — requirements frozen | @matheusvir | Confirms §1 is complete and unchanged, owns shell loop and TUI console mode | **PENDING** |
-| Reviewer | @KalebeSouza-dev | Cross-front review of the contract and the demo sequence | **PENDING** |
+| Reviewer | @arthurlazevedo | Front 1 sign-off of the proposed mechanism | **PENDING** |
 
 Sign-off means commenting on [#48](https://github.com/matheusvir/zesh/issues/48) with either "accept as proposed", or the exact amendments. Once Front 1 accepts, this document's status changes to `SIGNED` and the frozen details move into #8's `contracts.md`; this file then remains the bridge record and demo reference.
