@@ -150,10 +150,37 @@ skip a header).
 
 ### 4.4 `JMPR` above 32 KiB
 
-Pending probe execution.
+Answered by probe execution on `e8fd798` (transcripts in `evidence/f3-02/`).
+Probe `jmpr_range_32k.asm` (8194 instructions, 32776 bytes, made by
+`gen_jmpr_range_32k.py`): setup builds `0x8000` in W0 (`MV`+`SHL`), `JMPR W0`
+at instr 3, 8188 padding instructions, arrival marker `MV W5, #777` at byte
+`0x8000` (instr 8192), then `SYSCALL #2`.
+
+| Probe | TUI observation | Conclusion |
+|---|---|---|
+| `jmpr_range_32k.asm` | `input sent (32776 bytes)`; `b 32768` stops with W0 = 32768 (`0x00008000`), PC = 32768, W5 still 0; after `d 1`: W5 = 777, PC = 32772; PCB at `b 4036`: Pages = 9, W0 = 32768, W1 = 15, W5 = 777, W9 = 0 | `JMPR` takes the full 32-bit register with no 16-bit limit; PC reaches `0x8000`, marker runs, clean exit; 9 pages map fine |
+
+Reaching pc=32768 proves the jump: `JMPR` sits at instr 3 on the only path, so
+sequential fall-through past it is structurally impossible; W0 = `0x8000` proves
+the address was built in-register, since no single `MV` holds it positive.
+
+Environment note: the breakpoint count was 963180 instructions (`Cycles used:
+1321655`), far above the ~110.2k of tiny images (control: 8-byte probe -> `b 0
+after 110208 instructions`). The ~853k delta is image-size-dependent kernel load
+cost (9 pages vs 1), not jump cost; cause left for Front 2, no impact here.
 
 ## 5. Decision
 
-Pending probe execution. The decision must state go/no-go for F3-03 (#15) and
-F3-04 (#16), including the register-building rule needed when a 16-bit immediate
-cannot express an address.
+**GO for F3-03 (#15) and F3-04 (#16), conditional on three coding rules** (all
+evidenced above by TUI probes on `e8fd798`):
+
+1. Bare labels in `MV` yield instruction-count displacements, never absolute
+   addresses (§4.1).
+2. A single `MV` only materialises 0..32767 as positive; larger positives and
+   absolute addresses are built multi-instruction in registers (§4.2, §4.4).
+3. Code starts at offset 0; `_start` is an optional convention (§4.3).
+
+Residual risks (accepted): the TUI race at `machine/debug.go:374` kills sessions
+intermittently — rerun from `b 300`, never treat a crash as a probe result;
+`play` stays unusable for long paths; kernel load cost grows with image size
+(Front 2 item, not a runtime blocker).
