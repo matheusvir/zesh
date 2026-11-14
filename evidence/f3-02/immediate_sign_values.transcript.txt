@@ -1,0 +1,34 @@
+F3-02 Q-B1 transcript: boundary and in-range immediates through MV.
+Probe: evidence/f3-02/immediate_sign_values.asm
+Machine: zepa-machine @ e8fd798 (detached worktree /tmp/opencode/zepa-machine-e8fd798),
+  binary /tmp/opencode/zepa-kernel-e8fd798 built with `go build -tags kernel .`,
+  started as `./zepa-kernel-e8fd798 2GB 128` inside tmux session `zepa-spike`.
+Fresh session for this question; boot baseline: `Breakpoint reached at pc=300
+after 1613892 instructions`, `Cycles used: 2170970`.
+
+Commands (entered in order at the `cmd>` prompt):
+  input /home/anderson/code/zepa/zesh/evidence/f3-02/immediate_sign_values.asm
+  b 0
+  d 5
+  b 4036
+  b 5536
+
+Observed pane lines (via `tmux capture-pane`):
+  input sent (24 bytes)
+  Breakpoint reached at pc=0
+  Cycles used: 5
+  Memory pane disassembly of the loaded image:
+    0x0000 MV w0, #65535   (source: #-1)
+    0x0004 MV w1, #32768   (source: #-32768)
+    0x0008 MV w2, #32767   (source: #32767)
+    0x000C MV w3, #32768   (source: #32768)
+    0x0010 MV w4, #65535   (source: #65535)
+  Registers after `d 5`:
+    w0 = -1 (0xFFFFFFFF), w1 = -32768 (0xFFFF8000), w2 = 32767 (0x00007FFF),
+    w3 = -32768 (0xFFFF8000), w4 = -1 (0xFFFFFFFF), pc = 20 (0x00000014)
+  Breakpoint reached at pc=4036
+  Breakpoint reached at pc=5536 (idle, process cleaned up)
+
+Conclusion: the parser accepts -32768..65535 and stores the raw uint16 (the
+disassembly shows the unsigned form); execution sign-extends to 32 bits, so
+#32768 executes as -32768 and #65535 as -1. Only 0..32767 load as positive.

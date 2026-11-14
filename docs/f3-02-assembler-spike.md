@@ -123,7 +123,17 @@ address. Absolute addresses must still be built in registers.
 
 ### 4.2 Negative literals and sign extension
 
-Pending probe execution.
+Answered by probe execution on `e8fd798` (transcripts in `evidence/f3-02/`).
+
+| Probe | TUI observation | Conclusion |
+|---|---|---|
+| `immediate_sign_values.asm` (`#-1`, `#-32768`, `#32767`, `#32768`, `#65535`) | `input sent (24 bytes)`; disassembly shows raw unsigned halfwords (`#-1`→`#65535`, `#-32768`→`#32768`); after `d 5`: W0 = −1 (`0xFFFFFFFF`), W1 = −32768 (`0xFFFF8000`), W2 = 32767 (`0x00007FFF`), W3 = −32768 (`0xFFFF8000`), W4 = −1 (`0xFFFFFFFF`) | Parser accepts the full −32768..65535 range; execution sign-extends, so only 0..32767 load as positive — `#32768` runs as −32768, `#65535` as −1 |
+| `immediate_sign_reject_low.asm` (`#-32769`) | `... immediate out of 16-bit bounds: -32769`; no `input sent`, machine stays idle | Lower bound is exactly −32768 |
+| `immediate_sign_reject_high.asm` (`#65536`) | `... immediate out of 16-bit bounds: 65536`; no `input sent`, machine stays idle | Upper bound is exactly 65535 |
+
+Rule for F3-03/F3-04: a single `MV` can only materialise 0..32767 as positive.
+Anything else (large positives, absolute addresses) must be built with several
+instructions (shifts/adds) in registers.
 
 ### 4.3 `_start` versus entry at VA 0
 
