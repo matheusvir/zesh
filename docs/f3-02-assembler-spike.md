@@ -109,7 +109,17 @@ the probe, the TUI commands, the observed output and the conclusion.
 
 ### 4.1 Labels as `MV` immediates
 
-Pending probe execution.
+Answered by probe execution on `e8fd798` (transcripts in `evidence/f3-02/`).
+
+| Probe | TUI observation | Conclusion |
+|---|---|---|
+| `label_immediate_forward.asm` (`MV W0, alvo`, label 2 instructions ahead) | `input sent (16 bytes)`; disassembly shows `MV w0, #2`; after `d 1`: W0 = 2 (`0x00000002`), PC = 4; PCB at `b 4036`: saved W0 = 2, W1 = 7, PC = 16, W9 = 0 | Bare label assembles; value is the **instruction-count displacement** (2), not the byte offset (8) |
+| `label_immediate_backward.asm` (`MV W0, base`, label 1 instruction behind) | `input sent (12 bytes)`; disassembly shows `MV w0, #65535`; after `d 2`: W0 = -1 (`0xFFFFFFFF`), W1 = 7, PC = 8 | Backward labels work symmetrically; displacement −1 is stored as `uint16` 65535 and sign-extended at execution |
+| `label_immediate_hash_reject.asm` (`MV W0, #alvo`) | `Error converting instruction '[MV W0 #alvo]': ... Invalid immediate value: alvo`; no `input sent`, PCB stays empty | `#label` never matches the label table and fails immediate parsing; no process is created |
+
+Rule for F3-03/F3-04: a bare label in `MV` yields a relative displacement in
+instructions, usable for position-independent branches but never as an absolute
+address. Absolute addresses must still be built in registers.
 
 ### 4.2 Negative literals and sign extension
 

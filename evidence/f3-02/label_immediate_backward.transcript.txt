@@ -1,0 +1,27 @@
+F3-02 Q-A2 transcript: backward label as MV immediate (no #).
+Probe: evidence/f3-02/label_immediate_backward.asm
+Machine: zepa-machine @ e8fd798 (detached worktree /tmp/opencode/zepa-machine-e8fd798),
+  binary /tmp/opencode/zepa-kernel-e8fd798 built with `go build -tags kernel .`,
+  started as `./zepa-kernel-e8fd798 2GB 128` inside tmux session `zepa-spike`.
+Same session as Q-A1 (continued after its `b 5536` idle cleanup).
+
+Commands (entered in order at the `cmd>` prompt):
+  input /home/anderson/code/zepa/zesh/evidence/f3-02/label_immediate_backward.asm
+  b 0
+  d 2
+  b 4036
+  b 5536
+
+Observed pane lines (via `tmux capture-pane`):
+  input sent (12 bytes)
+  Breakpoint reached at pc=0
+  Cycles used: 2
+  Memory pane disassembly of the loaded image: `MV w0, #65535` at 0x0004
+  Registers after `d 2`: w0 = -1 (0xFFFFFFFF), w1 = 7 (0x00000007), pc = 8 (0x00000008)
+  Breakpoint reached at pc=4036 after 110 instructions
+  Breakpoint reached at pc=5536 (idle, process cleaned up)
+
+Conclusion: `MV W0, base` with a backward label assembles (12 bytes = 3
+instructions, no error); the displacement 0-1 = -1 is stored as uint16 65535
+(shown as `#65535` in the disassembly) and sign-extended at execution to
+0xFFFFFFFF. Direction and sign behave symmetrically with the forward case.
