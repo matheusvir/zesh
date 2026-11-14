@@ -1,6 +1,7 @@
-; F3-02 Q-D1: JMPR to byte 0x8000 (instr 8192).
-; Setup builds 0x8000 in W0 (MV+SHL), JMPR W0 must land on the marker.
-; Discriminator: breakpoint instruction count (~110.3k jumped vs ~118.5k fell through).
+; F3-02 Q-D1 historical probe: JMPR to byte 0x8000 (instr 8192).
+; Setup builds 0x8000 in W0 (MV+SHL), JMPR W0 should land on the marker.
+; NOT discriminating on its own: fall-through reaches the same marker.
+; See gen_jmpr_range_discriminating.py for the discriminating probe.
 MV W0, #1
 MV W1, #15
 SHL W0, W0, W1

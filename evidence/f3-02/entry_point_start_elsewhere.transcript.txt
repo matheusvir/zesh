@@ -1,10 +1,13 @@
 F3-02 Q-C2 transcript: control with _start away from the top.
+
+Curated summary; path variables are written unexpanded. See README.md for
+evidence file conventions.
 Probe: evidence/f3-02/entry_point_start_elsewhere.asm
 Machine: zepa-machine @ e8fd798, same session as Q-C1 (continued after its
 `b 5536` idle cleanup).
 
 Commands (entered in order at the `cmd>` prompt):
-  input /home/anderson/code/zepa/zesh/evidence/f3-02/entry_point_start_elsewhere.asm
+  input $ZESH_ROOT/evidence/f3-02/entry_point_start_elsewhere.asm
   b 0
   d 1
   d 1

@@ -1,10 +1,13 @@
 F3-02 Q-B2 transcript: below-range immediate (must reject).
+
+Curated summary; path variables are written unexpanded. See README.md for
+evidence file conventions.
 Probe: evidence/f3-02/immediate_sign_reject_low.asm
 Machine: zepa-machine @ e8fd798, same session as Q-B1 (continued after its
 `b 5536` idle cleanup).
 
 Commands:
-  input /home/anderson/code/zepa/zesh/evidence/f3-02/immediate_sign_reject_low.asm
+  input $ZESH_ROOT/evidence/f3-02/immediate_sign_reject_low.asm
 
 Observed pane lines (via `tmux capture-pane`):
   Error converting instruction '[MV W0 #-32769]': Error encoding instruction '[MV W0 #-32769]': immediate out of 16-bit bounds: -32769

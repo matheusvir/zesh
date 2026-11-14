@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Generate jmpr_range_32k.asm: JMPR to byte 0x8000 (instruction 8192).
 
+Historical probe; kept for the record. It is NOT discriminating: if JMPR did
+nothing, sequential fall-through over the 8188 padding instructions also reaches
+the marker at byte 0x8000. Use gen_jmpr_range_discriminating.py for the
+discriminating probe (failure path exits 60 before the marker).
+
 Layout:
   instr 0: MV W0, #1
   instr 1: MV W1, #15
@@ -14,9 +19,10 @@ Total: 8194 instructions = 32776 bytes.
 from pathlib import Path
 
 lines = [
-    "; F3-02 Q-D1: JMPR to byte 0x8000 (instr 8192).",
-    "; Setup builds 0x8000 in W0 (MV+SHL), JMPR W0 must land on the marker.",
-    "; Discriminator: breakpoint instruction count (~110.3k jumped vs ~118.5k fell through).",
+    "; F3-02 Q-D1 historical probe: JMPR to byte 0x8000 (instr 8192).",
+    "; Setup builds 0x8000 in W0 (MV+SHL), JMPR W0 should land on the marker.",
+    "; NOT discriminating on its own: fall-through reaches the same marker.",
+    "; See gen_jmpr_range_discriminating.py for the discriminating probe.",
     "MV W0, #1",
     "MV W1, #15",
     "SHL W0, W0, W1",

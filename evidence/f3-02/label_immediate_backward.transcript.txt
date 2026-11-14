@@ -1,12 +1,15 @@
 F3-02 Q-A2 transcript: backward label as MV immediate (no #).
+
+Curated summary; path variables are written unexpanded. See README.md for
+evidence file conventions.
 Probe: evidence/f3-02/label_immediate_backward.asm
-Machine: zepa-machine @ e8fd798 (detached worktree /tmp/opencode/zepa-machine-e8fd798),
-  binary /tmp/opencode/zepa-kernel-e8fd798 built with `go build -tags kernel .`,
-  started as `./zepa-kernel-e8fd798 2GB 128` inside tmux session `zepa-spike`.
+Machine: zepa-machine @ e8fd798 (detached worktree $MACHINE_WT),
+  binary $KERNEL_BIN built with `go build -tags kernel .`,
+  started as `$KERNEL_BIN 2GB 128` inside tmux session `zepa-spike`.
 Same session as Q-A1 (continued after its `b 5536` idle cleanup).
 
 Commands (entered in order at the `cmd>` prompt):
-  input /home/anderson/code/zepa/zesh/evidence/f3-02/label_immediate_backward.asm
+  input $ZESH_ROOT/evidence/f3-02/label_immediate_backward.asm
   b 0
   d 2
   b 4036

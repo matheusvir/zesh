@@ -1,0 +1,67 @@
+F3-02 Q-D1 discriminating transcript: JMPR to byte 0x8000.
+
+Curated summary, not a raw capture. Literal `tmux capture-pane -p` output is in
+`jmpr_range_discriminating.raw.txt`; byte sizes, hashes and marker bytes are in
+`jmpr_range_discriminating.sizes.txt`.
+
+Probe: evidence/f3-02/jmpr_range_discriminating.asm, generated deterministically
+by `gen_jmpr_range_discriminating.py`; assembler output 32780 bytes.
+
+Layout (one instruction per 4 bytes):
+  instr 0:  MV W0, #1
+  instr 1:  MV W1, #15
+  instr 2:  SHL W0, W0, W1          (W0 = 0x8000 = 32768)
+  instr 3:  JMPR W0
+  instr 4:  MV W8, #60              (fall-through failure path)
+  instr 5:  SYSCALL #2              (exit 60, byte 0x8000 never reached)
+  instr 6..8191: 8186x MV W2, #0    (padding)
+  instr 8192 (byte 0x8000): MV W5, #777   (success marker)
+  instr 8193: MV W8, #10
+  instr 8194: SYSCALL #2            (exit 10)
+
+Byte math: the marker starts at instruction 8192; 8192 * 4 = 32768 = 0x8000.
+There are 6 setup/failure instructions (instr 0..5) plus 8186 padding
+instructions (instr 6..8191) before the marker. Total: 8195 instructions =
+32780 bytes = 9 pages (32768 / 4096 = 8, last byte needs page 9).
+
+Machine: zepa-machine @ e8fd798, detached worktree `$MACHINE_WT`
+(set to the pinned worktree during the recorded run), binary
+`$KERNEL_BIN` built with `go build -tags kernel .`, started
+as `$KERNEL_BIN 2GB 128` inside tmux session `zepa-spike`.
+Fresh session; boot baseline: `Breakpoint reached at pc=300 after 1613892
+instructions`, `Cycles used: 2170970`.
+
+Commands (entered in order at the `cmd>` prompt; `$ZESH_ROOT` is expanded by the
+calling shell before `tmux send-keys`):
+  input $ZESH_ROOT/evidence/f3-02/jmpr_range_discriminating.asm
+  b 32768
+  d 1
+  b 4036
+  b 5536
+
+Observed pane lines (literal captures in the .raw.txt file):
+  input sent (32780 bytes)
+  Breakpoint reached at pc=32768 after 963182 instructions
+  Cycles used: 1321660
+  Registers at pc=32768: w0 = 32768 (0x00008000), w1 = 15, w5 = 0, w8 = 0
+  Memory pane: 0x7FFC MV w2,#0 | 0x8000 MV w5,#777 | 0x8004 MV w8,#10 |
+    0x8008 SYSCALL #2
+  Registers after `d 1`: w5 = 777 (0x00000309), pc = 32772
+  Breakpoint reached at pc=4036 after 111 instructions
+  Cycles used: 179
+  PCB Vector at pc=4036: PID 0, Pages = 9, saved W0 = 32768, W1 = 15,
+    W5 = 777, W8 = 10, W9 = 10 (status 10), PC = 32780
+  Breakpoint reached at pc=5536 after 5777 instructions
+  Cycles used: 7510
+
+Conclusion: JMPR lands on a 32-bit register address with no 16-bit range limit.
+The probe is discriminating because a failed/ignored JMPR executes instr 4-5,
+exits 60 with W5 = 0, and never reaches byte 0x8000; the observed run instead
+shows W5 = 777, W8 = W9 = 10 and PC = 32780, i.e. the success path at 0x8000
+ran. W0 = 0x8000 also proves the address was built in-register (MV+SHL), since
+no single MV holds it positive.
+
+Instruction count: `b 32768` reported 963182 instructions, only 6 more than the
+same-size control's load-only `b 0` count (963176). See
+`jmpr_range_discriminating_control.transcript.txt`; the ~963k is pre-execution
+input/load cost, not padding execution or jump cost.

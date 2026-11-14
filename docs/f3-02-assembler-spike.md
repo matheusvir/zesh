@@ -5,9 +5,10 @@ assembler questions that block the runtime idiom library, using probes loaded
 through the TUI `input` path, and record a go/no-go for building `rt.asm` in
 F3-03 (#15) and F3-04 (#16).
 
-Status: complete. All four questions answered with TUI probes on `e8fd798`; go/no-go for F3-03 (#15) and F3-04 (#16) recorded in section 5. This is a
-spike: no `rt.asm`, `memcpy`, `strcmp`, `strlen`, `itoa` or `do_wait` code is
-written here.
+Status: ready for review — pending reviewer re-run, PR, and #9 validation. All
+four questions are answered with TUI probes on `e8fd798`; go/no-go for F3-03
+(#15) and F3-04 (#16) is recorded in section 5. This is a spike: no `rt.asm`,
+`memcpy`, `strcmp`, `strlen`, `itoa` or `do_wait` code is written here.
 
 ## 1. Ground truth and environment
 
@@ -20,20 +21,26 @@ written here.
 | Terminal driver | `tmux 3.8`, detached session `zepa-spike`, 220x55 |
 
 The local submodule checkout is left untouched. Evidence runs use a detached
-worktree of the pinned commit:
+worktree of the pinned commit. Set repository-relative path variables first:
 
 ```bash
-cd zesh/zepa-machine
-git worktree add --detach /tmp/opencode/zepa-machine-e8fd798 e8fd79859c5766c33664bf408f8a86982abdf126
+export ZESH_ROOT=$(git rev-parse --show-toplevel)
+export MACHINE_WT=${MACHINE_WT:-/tmp/opencode/zepa-machine-e8fd798}
+export KERNEL_BIN=${KERNEL_BIN:-$MACHINE_WT/zepa-kernel-e8fd798}
+```
+
+```bash
+cd "$ZESH_ROOT/zepa-machine"
+git worktree add --detach "$MACHINE_WT" e8fd79859c5766c33664bf408f8a86982abdf126
 ```
 
 Build the kernel TUI from that worktree (the kernel path is relative to the
 working directory):
 
 ```bash
-cd /tmp/opencode/zepa-machine-e8fd798
-go build -tags kernel -o /tmp/opencode/zepa-kernel-e8fd798 .
-./zepa-kernel-e8fd798 2GB 128
+cd "$MACHINE_WT"
+go build -tags kernel -o "$KERNEL_BIN" .
+"$KERNEL_BIN" 2GB 128
 ```
 
 ### Driving the TUI without an interactive terminal
@@ -44,19 +51,29 @@ TUI is therefore started inside a detached `tmux` session and driven with
 
 ```bash
 tmux new-session -d -s zepa-spike -x 220 -y 55 \
-  "cd /tmp/opencode/zepa-machine-e8fd798 && /tmp/opencode/zepa-kernel-e8fd798 2GB 128"
+  "cd '$MACHINE_WT' && '$KERNEL_BIN' 2GB 128"
 tmux send-keys -t zepa-spike 'b 300' Enter      # boot-complete breakpoint
 tmux send-keys -t zepa-spike 'input asm/samples/small.asm' Enter
 tmux send-keys -t zepa-spike 'b 0' Enter        # loaded program entry
 tmux capture-pane -t zepa-spike -p
 ```
 
-`input` opens the path from the TUI process' working directory, and absolute
-paths are accepted, so probes kept in `zesh/evidence/f3-02/` can be loaded
-without copying them into the machine checkout:
+The repository ships a driver for these steps:
+`evidence/f3-02/run_probe.sh start|run|cmd|wait|cap|stop`. `run_probe.sh run
+<probe>` copies the probe into `$MACHINE_WT/evidence-probes/` and sends a
+relative `input` path, so no user-specific absolute path is required:
+
+```bash
+"$ZESH_ROOT/evidence/f3-02/run_probe.sh" start
+"$ZESH_ROOT/evidence/f3-02/run_probe.sh" run jmpr_range_discriminating.asm
+"$ZESH_ROOT/evidence/f3-02/run_probe.sh" wait 'input sent' 20
+```
+
+When driving `tmux` manually, the calling shell expands the variable before the
+command reaches the TUI:
 
 ```text
-input /home/anderson/code/zepa/zesh/evidence/f3-02/<probe>.asm
+input $ZESH_ROOT/evidence/f3-02/<probe>.asm
 ```
 
 ## 2. Verified baseline
@@ -69,7 +86,7 @@ which is the precondition for trusting later observations:
 | `b 300` | `Breakpoint reached at pc=300 after 1613892 instructions`, `Cycles used: 2170970`, CPU PC `0xC000012C` |
 | `input asm/samples/small.asm` | `input sent (12 bytes)` |
 | `b 0` | `Breakpoint reached at pc=0 after 110210 instructions`, `Cycles used: 148859` |
-| `input /tmp/opencode/.../asm/samples/syscall.asm` | `input sent (4 bytes)` — absolute paths work |
+| `input $MACHINE_WT/asm/samples/syscall.asm` | `input sent (4 bytes)` — paths outside the checkout also work |
 
 Boot is deterministic for this revision: the instruction and cycle counts match
 `docs/f3-00-recon.md`.
@@ -117,9 +134,17 @@ Answered by probe execution on `e8fd798` (transcripts in `evidence/f3-02/`).
 | `label_immediate_backward.asm` (`MV W0, base`, label 1 instruction behind) | `input sent (12 bytes)`; disassembly shows `MV w0, #65535`; after `d 2`: W0 = -1 (`0xFFFFFFFF`), W1 = 7, PC = 8 | Backward labels work symmetrically; displacement −1 is stored as `uint16` 65535 and sign-extended at execution |
 | `label_immediate_hash_reject.asm` (`MV W0, #alvo`) | `Error converting instruction '[MV W0 #alvo]': ... Invalid immediate value: alvo`; no `input sent`, PCB stays empty | `#label` never matches the label table and fails immediate parsing; no process is created |
 
-Rule for F3-03/F3-04: a bare label in `MV` yields a relative displacement in
-instructions, usable for position-independent branches but never as an absolute
-address. Absolute addresses must still be built in registers.
+Rule for F3-03/F3-04: a bare label in `MV` yields a displacement in
+**instruction units**, not bytes, and it is only directly usable by direct
+branches that take instruction units (e.g. `JUMP label`). `JMPR` takes a **byte
+address**, so a label materialised by `MV` must not be passed to `JMPR`
+directly: shift it left by 2 (`SHL`), then add the base byte address. The
+displacement is encoded in 16 bits and sign-extended at execution: a forward
+label more than 65535 instructions ahead, or a backward label more than 32768
+instructions behind, fails to assemble. This is a non-issue for the 64 KiB
+Front 3 images.
+
+Absolute addresses must still be built in registers.
 
 ### 4.2 Negative literals and sign extension
 
@@ -151,23 +176,55 @@ skip a header).
 ### 4.4 `JMPR` above 32 KiB
 
 Answered by probe execution on `e8fd798` (transcripts in `evidence/f3-02/`).
-Probe `jmpr_range_32k.asm` (8194 instructions, 32776 bytes, made by
-`gen_jmpr_range_32k.py`): setup builds `0x8000` in W0 (`MV`+`SHL`), `JMPR W0`
-at instr 3, 8188 padding instructions, arrival marker `MV W5, #777` at byte
-`0x8000` (instr 8192), then `SYSCALL #2`.
+The original probe `jmpr_range_32k.asm` is kept for history but is **not
+discriminating**: JMPR and sequential fall-through both reach the marker at
+byte `0x8000`. The review probe is `jmpr_range_discriminating.asm`,
+generated deterministically by `gen_jmpr_range_discriminating.py`:
+
+| Instr | Byte | Instruction | Purpose |
+|---|---|---|---|
+| 0 | 0 | `MV W0, #1` | build the address |
+| 1 | 4 | `MV W1, #15` | shift count |
+| 2 | 8 | `SHL W0, W0, W1` | W0 = `0x8000` = 32768 |
+| 3 | 12 | `JMPR W0` | target of the question |
+| 4 | 16 | `MV W8, #60` | fall-through failure status |
+| 5 | 20 | `SYSCALL #2` | exit 60, marker never reached |
+| 6..8191 | 24..32767 | 8186x `MV W2, #0` | padding |
+| 8192 | **32768 = 0x8000** | `MV W5, #777` | arrival marker |
+| 8193 | 32772 | `MV W8, #10` | success status |
+| 8194 | 32776 | `SYSCALL #2` | exit 10 |
+
+Byte math: the marker is instruction 8192, so `8192 * 4 = 32768 = 0x8000`.
+Six setup/failure instructions plus 8186 padding instructions fill instructions
+6..8191; total 8195 instructions = **32780 bytes = 9 pages**. A same-size
+control, `jmpr_range_discriminating_control.asm` (8194 instructions, 32776
+bytes, 9 pages), has no jump: 8191 padding instructions, marker at instruction
+8191 (byte 32764), then `MV W8, #10` + `SYSCALL #2` (exit 10).
 
 | Probe | TUI observation | Conclusion |
 |---|---|---|
-| `jmpr_range_32k.asm` | `input sent (32776 bytes)`; `b 32768` stops with W0 = 32768 (`0x00008000`), PC = 32768, W5 still 0; after `d 1`: W5 = 777, PC = 32772; PCB at `b 4036`: Pages = 9, W0 = 32768, W1 = 15, W5 = 777, W9 = 0 | `JMPR` takes the full 32-bit register with no 16-bit limit; PC reaches `0x8000`, marker runs, clean exit; 9 pages map fine |
+| `jmpr_range_discriminating.asm` | `input sent (32780 bytes)`; `b 32768` -> `Breakpoint reached at pc=32768 after 963182 instructions` (`Cycles used: 1321660`), W0 = 32768, W1 = 15, W5 = 0, PC = 32768; after `d 1`: W5 = 777, PC = 32772; PCB at `b 4036` (`+111` instructions): Pages = 9, W0 = 32768, W1 = 15, W5 = 777, W8 = 10, W9 = 10, PC = 32780; `b 5536` idle | `JMPR` takes the full 32-bit register with no 16-bit limit and lands on byte `0x8000`; the success path ran (W5 = 777, status 10) |
+| `jmpr_range_discriminating_control.asm` | `input sent (32776 bytes)`; `b 0` -> `Breakpoint reached at pc=0 after 963176 instructions` (`Cycles used: 1321650`, no probe instruction executed); `b 32764` -> `10303` instructions (8191 padding + 64 timer slices, `clock_interrupt_count = 64`); after `d 1`: W5 = 777, PC = 32768; PCB at `b 4036`: Pages = 9, W5 = 777, W8 = 10, W9 = 10, PC = 32776; `b 5536` idle | The 9-page input/load path costs ~963k instructions before the first probe instruction; walking the sequential padding costs only 10303 more |
 
-Reaching pc=32768 proves the jump: `JMPR` sits at instr 3 on the only path, so
-sequential fall-through past it is structurally impossible; W0 = `0x8000` proves
-the address was built in-register, since no single `MV` holds it positive.
+Discriminating power: a JMPR that did not jump would execute instructions 4-5,
+exit 60 with W5 = 0, and never reach byte `0x8000`; the observed run instead has
+W5 = 777, W8 = W9 = 10 and PC = 32780, so the marker at `0x8000` executed.
+W0 = `0x8000` also proves the address was built in-register, since no single
+`MV` holds it positive.
 
-Environment note: the breakpoint count was 963180 instructions (`Cycles used:
-1321655`), far above the ~110.2k of tiny images (control: 8-byte probe -> `b 0
-after 110208 instructions`). The ~853k delta is image-size-dependent kernel load
-cost (9 pages vs 1), not jump cost; cause left for Front 2, no impact here.
+Instruction-count note: the original probe reported 963180 instructions, far
+above the ~110.2k of tiny images. The same-size control isolates this: reaching
+pc=0 on a 9-page image already costs 963176 instructions, and the jumping probe
+needs only 6 more to reach pc=32768. The ~963k is therefore input/load cost, not
+padding execution and not jump cost. The specific kernel path behind that load
+cost is **not isolated** in this spike (hypothesis: page mapping / zero-fill
+work); flagged for Front 2 and it does not affect the JMPR conclusion.
+
+Evidence: `jmpr_range_discriminating.transcript.txt` and
+`jmpr_range_discriminating_control.transcript.txt` (curated summaries), the
+matching `.raw.txt` files (literal `tmux capture-pane -p` output), and
+`jmpr_range_discriminating.sizes.txt` (`wc -c`, `sha256sum`, assembler byte
+counts and marker bytes).
 
 ## 5. Decision
 
@@ -182,5 +239,7 @@ evidenced above by TUI probes on `e8fd798`):
 
 Residual risks (accepted): the TUI race at `machine/debug.go:374` kills sessions
 intermittently — rerun from `b 300`, never treat a crash as a probe result;
-`play` stays unusable for long paths; kernel load cost grows with image size
-(Front 2 item, not a runtime blocker).
+`play` stays unusable for long paths; a 9-page image costs ~963k instructions
+in the input/load path before its first instruction (measured by the control in
+§4.4; the underlying loader path is not isolated — Front 2 item, not a runtime
+blocker).
