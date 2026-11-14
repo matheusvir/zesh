@@ -1,0 +1,27 @@
+F3-02 Q-C1 transcript: no _start anywhere; entry must be the first instruction (VA 0).
+Probe: evidence/f3-02/entry_point_no_start.asm
+Machine: zepa-machine @ e8fd798 (detached worktree /tmp/opencode/zepa-machine-e8fd798),
+  binary /tmp/opencode/zepa-kernel-e8fd798 built with `go build -tags kernel .`,
+  started as `./zepa-kernel-e8fd798 2GB 128` inside tmux session `zepa-spike`.
+Fresh session for this question; boot baseline: `Breakpoint reached at pc=300
+after 1613892 instructions`, `Cycles used: 2170970`.
+
+Commands (entered in order at the `cmd>` prompt):
+  input /home/anderson/code/zepa/zesh/evidence/f3-02/entry_point_no_start.asm
+  b 0
+  d 1
+  b 4036
+  b 5536
+
+Observed pane lines (via `tmux capture-pane`):
+  input sent (8 bytes)
+  Breakpoint reached at pc=0
+  Cycles used: 1
+  Memory pane disassembly: 0x0000 MV w1, #5 | 0x0004 SYSCALL #2
+  Registers after `d 1`: w1 = 5 (0x00000005), pc = 4 (0x00000004)
+  Breakpoint reached at pc=4036
+  PCB Vector at pc=4036: PID 0, saved W1 = 5, PC = 8, W8 = 0, W9 = 0 (status 0)
+  Breakpoint reached at pc=5536 (idle, process cleaned up)
+
+Conclusion: a program with no `_start` label assembles and runs; execution
+begins at the first instruction of the image (VA 0). `_start` is not required.

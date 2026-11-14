@@ -137,7 +137,16 @@ instructions (shifts/adds) in registers.
 
 ### 4.3 `_start` versus entry at VA 0
 
-Pending probe execution.
+Answered by probe execution on `e8fd798` (transcripts in `evidence/f3-02/`).
+
+| Probe | TUI observation | Conclusion |
+|---|---|---|
+| `entry_point_no_start.asm` (`MV W1, #5` + `SYSCALL #2`, no `_start`) | `input sent (8 bytes)`; `b 0` stops at pc=0; after `d 1`: W1 = 5, PC = 4; PCB at `b 4036`: saved W1 = 5, PC = 8, W9 = 0 | No `_start` needed; execution begins at the first instruction (VA 0); exit status 0 |
+| `entry_point_start_elsewhere.asm` (`JUMP _start` + skipped `MV W1, #99` + `_start: MV W1, #5`) | `input sent (16 bytes)`; disassembly `JUMP +2`; after first `d 1`: PC = 8, W1 = 0; after second: W1 = 5, PC = 12; PCB at `b 4036`: W1 = 5, W9 = 0 | `_start` is an ordinary label; entry is still VA 0 and only the explicit `JUMP` reaches it; the skipped `MV #99` never runs |
+
+Rule for F3-03/F3-15: image layout starts code at offset 0; `_start` is an
+optional convention, required only when the program itself jumps to it (e.g. to
+skip a header).
 
 ### 4.4 `JMPR` above 32 KiB
 

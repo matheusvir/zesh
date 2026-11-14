@@ -1,0 +1,27 @@
+F3-02 Q-C2 transcript: control with _start away from the top.
+Probe: evidence/f3-02/entry_point_start_elsewhere.asm
+Machine: zepa-machine @ e8fd798, same session as Q-C1 (continued after its
+`b 5536` idle cleanup).
+
+Commands (entered in order at the `cmd>` prompt):
+  input /home/anderson/code/zepa/zesh/evidence/f3-02/entry_point_start_elsewhere.asm
+  b 0
+  d 1
+  d 1
+  b 4036
+  b 5536
+
+Observed pane lines (via `tmux capture-pane`):
+  input sent (16 bytes)
+  Breakpoint reached at pc=0
+  Memory pane disassembly: 0x0000 JUMP +2 | 0x0004 MV w1, #99 | 0x0008 MV w1, #5 | 0x000C SYSCALL #2
+  Cycles used: 2
+  Registers after first `d 1`: pc = 8 (0x00000008), w1 = 0 (the MV #99 was skipped)
+  Registers after second `d 1`: w1 = 5 (0x00000005), pc = 12 (0x0000000C)
+  Breakpoint reached at pc=4036
+  PCB Vector at pc=4036: PID 0, saved W0 = 0, W1 = 5, PC = 16, W8 = 0, W9 = 0 (status 0)
+  Breakpoint reached at pc=5536 (idle, process cleaned up)
+
+Conclusion: `_start` is an ordinary label. The program still enters at VA 0
+(instr 0); only the explicit `JUMP _start` transfers control to instr 2. The
+skipped `MV W1, #99` never executes (final W1 = 5, not 99).
