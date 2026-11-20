@@ -1,0 +1,27 @@
+$ wc -c jmpr_range_discriminating.asm jmpr_range_discriminating_control.asm
+ 82154 jmpr_range_discriminating.asm
+ 82065 jmpr_range_discriminating_control.asm
+164219 total
+
+$ sha256sum jmpr_range_discriminating.asm jmpr_range_discriminating_control.asm
+87756c937a205a16a8f88453912cc4ef37163f3ced07892971517d8b7204a255  jmpr_range_discriminating.asm
+a19a3d6993c9e4b0109bf9c7a17b06d07ae61c704d5b5adf325cc11cd78e6f3c  jmpr_range_discriminating_control.asm
+
+# assembler.RunAssembler from zepa-machine @ e8fd798 (same code path as TUI input):
+jmpr_range_discriminating.asm: 32780 bytes
+jmpr_range_discriminating_control.asm: 32776 bytes
+
+# Marker placement (first four bytes at the breakpoint address):
+probe   bytes[0x8000:0x8004] = 00a06120  # MV W5, #777 at byte 0x8000
+control bytes[0x7FFC:0x8000] = 00a06120  # MV W5, #777
+control bytes[0x8000:0x8004] = 01000140  # MV W8, #10 (success status)
+standalone MV W5, #777       = 00a06120  # encoding cross-check
+
+# Assembled binaries written by cross-assembler.RunAssembler (not committed;
+# `input` in the TUI prints the same lengths: 32780 and 32776 bytes).
+$ wc -c jmpr_range_discriminating.bin jmpr_range_discriminating_control.bin
+ 32780 jmpr_range_discriminating.bin
+ 32776 jmpr_range_discriminating_control.bin
+$ sha256sum jmpr_range_discriminating.bin jmpr_range_discriminating_control.bin
+e794c6480be56ef5bf9c6112a0a7294eacb86cb7647bd59422eee94369e50c3d  jmpr_range_discriminating.bin
+78f21544d35690dbeb7dc4ae4b99a798c0ce962b34e9e1aa12cbfb5e3100b6e8  jmpr_range_discriminating_control.bin

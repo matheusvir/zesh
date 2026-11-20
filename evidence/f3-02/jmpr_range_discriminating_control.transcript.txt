@@ -1,0 +1,60 @@
+F3-02 Q-D1 control transcript: same 9-page image without JMPR.
+
+Curated summary, not a raw capture. Literal `tmux capture-pane -p` output is in
+`jmpr_range_discriminating_control.raw.txt`; byte sizes, hashes and marker bytes
+are in `jmpr_range_discriminating.sizes.txt`.
+
+Probe: evidence/f3-02/jmpr_range_discriminating_control.asm, generated
+deterministically by `gen_jmpr_range_discriminating.py`; assembler output
+32776 bytes.
+
+Layout (one instruction per 4 bytes, no jump):
+  instr 0..8190: 8191x MV W2, #0    (sequential padding)
+  instr 8191 (byte 32764): MV W5, #777   (marker, reached by fall-through)
+  instr 8192 (byte 32768): MV W8, #10
+  instr 8193 (byte 32772): SYSCALL #2    (exit 10)
+
+Byte math: marker at instruction 8191; 8191 * 4 = 32764 = 0x7FFC. Total:
+8194 instructions = 32776 bytes = 9 pages, the same page count as the
+discriminating probe (32780 bytes).
+
+Machine: zepa-machine @ e8fd798, detached worktree `$MACHINE_WT`
+(set to the pinned worktree during the recorded run), binary
+`$KERNEL_BIN` built with `go build -tags kernel .`, started
+inside tmux session `zepa-spike`.
+
+Commands (entered in order at the `cmd>` prompt; `$ZESH_ROOT` is expanded by the
+calling shell before `tmux send-keys`):
+  input $ZESH_ROOT/evidence/f3-02/jmpr_range_discriminating_control.asm
+  b 0
+  b 32764
+  d 1
+  b 4036
+  b 5536
+
+Observed pane lines (literal captures in the .raw.txt file):
+  input sent (32776 bytes)
+  Breakpoint reached at pc=0 after 963176 instructions
+  Cycles used: 1321650
+  (no probe instruction has executed yet; w5 = 0, pc = 0)
+  Breakpoint reached at pc=32764 after 10303 instructions
+  Cycles used: 11903
+  clock_interrupt_count = 64; w5 = 0, pc = 32764
+  Registers after `d 1`: w5 = 777 (0x00000309), pc = 32768
+  Breakpoint reached at pc=4036 after 111 instructions
+  Cycles used: 179
+  PCB Vector at pc=4036: PID 0, Pages = 9, saved W0 = 0, W1 = 0, W5 = 777,
+    W8 = 10, W9 = 10 (status 10), PC = 32776
+  Breakpoint reached at pc=5536 after 5777 instructions
+  Cycles used: 7510
+
+Conclusion: the 9-page image costs 963176 instructions just to reach entry
+(pc=0), before any probe instruction runs. Walking the 8191 padding
+instructions sequentially then costs 10303 more: 8191 probe instructions plus
+64 timer slices (~33 kernel instructions each, clock_interrupt_count = 64).
+The discriminating probe's `b 32768` count of 963182 is therefore only 6 above
+this load-only baseline, which rules out sequential execution of the 8188
+padding instructions (~10.3k instructions would have been needed) and shows the
+~963k is the input/load path rather than jump cost. The specific kernel path
+behind that load cost is not root-caused here (hypothesis: page mapping /
+zero-fill work); flagged for Front 2 and it does not affect the JMPR conclusion.
