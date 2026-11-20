@@ -5,8 +5,9 @@ assembler questions that block the runtime idiom library, using probes loaded
 through the TUI `input` path, and record a go/no-go for building `rt.asm` in
 F3-03 (#15) and F3-04 (#16).
 
-Status: ready for review — pending reviewer re-run, PR, and #9 validation. All
-four questions are answered with TUI probes on `e8fd798`; go/no-go for F3-03
+Status: reviewer re-ran all probes on `e8fd798` (PR #65, CHANGES_REQUESTED
+on docs wording only); pending approval → `Validated` → lead merge → close #9.
+All four questions are answered with TUI probes on `e8fd798`; go/no-go for F3-03
 (#15) and F3-04 (#16) is recorded in section 5. This is a spike: no `rt.asm`,
 `memcpy`, `strcmp`, `strlen`, `itoa` or `do_wait` code is written here.
 
