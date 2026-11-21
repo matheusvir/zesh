@@ -35,14 +35,15 @@ and integrate work across fronts.
 
 ## 2. Repository structure
 
-Target layout — directories appear as their issues land (`shell/`, `utils/`, `rt.asm`, `stubs.asm`, `contracts.md` do not exist yet).
+Target layout — directories appear as their issues land (`rt/`, `io/`, `shell/`, and `utils/` do not exist yet).
 
 | Path | Content |
 |---|---|
 | `contracts.md` | Frozen syscall/argv contract (see section 11) |
+| `rt/` | Shared runtime sources in ZEPA assembly |
+| `io/` | Stub and real syscall wrappers |
 | `shell/` | Shell sources in ZEPA assembly |
 | `utils/` | `echo`, `true`, `false`, `pid`, `wc` sources |
-| `rt.asm`, `stubs.asm` | Shared assembly idioms and test doubles |
 | `docs/` | Report drafts, demo logs, meeting notes |
 | `zepa-machine/` | Submodule pointer to the fork (see section 9) |
 
