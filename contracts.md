@@ -97,7 +97,7 @@ Rules:
 10. The buffer header and payload must be 4-byte aligned.
 11. `readfile` is not a read/write variant. Its one-argument form is not an agreed Front 2 ABI; no agreement planned. F2-CR-1 is optional future work. Front 3 uses the three-argument `stub_readfile` described in section 7.
 
-The console read model in rules 4 through 9 is imported by reference from INT-06 (#48) amendments 1-4 (bridge file pending; current tree copy is DRAFT on `docs/int-06-console-io-1`) and F1-06 (#58); this document does not restate the ring mechanics.
+The console read model in rules 4 through 9 is imported by reference from INT-06 (#48) amendments 1-4 (signed content lives in issue #48; the closed draft PR #51 is superseded and no tree copy is normative) and F1-06 (#58); this document does not restate the ring mechanics.
 
 Ground truth for the 512-byte bound: the current kernel has no read/write implementation, so 512 is a Front 3 design limit chosen to fit one page and to keep a single-word count safe (design decision D4). The console bridge default is two 1024-byte rings per INT-06 (#48) amendments 1-4; F1-03/F1-05 consume the signed layout. The per-call cap stays `MAX_XFER = 512`.
 
@@ -166,20 +166,38 @@ Real `exec` (5, `ImageID`) loads a new image. It does **not** carry dynamic argv
 
 Every standalone flat image carries a build-time entry wrapper that establishes a valid W8 before the utility body. At `_start` the wrapper loads W8 with the absolute address of the exit trampoline and then enters the utility body; the trampoline (`OR W8, W9, W9` / `SYSCALL #2`) sits after the body and is reached only via the utility's `JMPR W8`. The utility source stays shared. Front 2 supplies no link. F3-15 (#47) owns the build, and F3-13 (#5) owns the wiring.
 
-## 5. Image layout and `rt.asm` prologue
+## 5. Image layout, header, and composition
 
 ### 5.1 Address map
 
 | Range | Size | Use |
 |---|---|---|
-| `0x0000..0x00D7` | 216 bytes | `rt.asm` header: jump word, argv window, padding |
-| `0x00D8..0x5FFF` | 24360 bytes | Utility and shell code; code end must be `<= 0x6000` exclusive |
-| `0x6000..0x6BFF` | 3072 bytes | Output mirror; payload at `0x6000`, length word at `0x6BFC` |
-| `0x6C00..0x7FFF` | 5120 bytes | General data |
+| `0x0000..0x00D7` | 216 bytes | `rt/rt_header.asm`: jump word, argv window, padding, `_start` label (section 5.3) |
+| `0x00D8..0x0FC3` | 3820 bytes | Shell code slot (F3-11, `shell/shell_loop.asm`) |
+| `0x0FC4..0x0FFF` | 188 bytes | Padding. VA `0x0FC4` is the low alias of kernel breakpoint `b 4036` (`0xC0000FC4`); no executable code may land there |
+| `0x1000..0x17FF` | 2048 bytes | Runtime library slot (`rt/rt.asm`, F3-03/F3-04) |
+| `0x1800..0x1FFF` | 2048 bytes | Stub layer slot (`io/stubs.asm`) and the utility table (section 5.6) |
+| `0x2000..0x23FF` | 1024 bytes | `true` slot |
+| `0x2400..0x27FF` | 1024 bytes | `false` slot |
+| `0x2800..0x2BFF` | 1024 bytes | `pid` slot |
+| `0x2C00..0x2FFF` | 1024 bytes | `echo` slot |
+| `0x3000..0x33FF` | 1024 bytes | `wc` slot |
+| `0x3400..0x37FF` | 1024 bytes | Tokenizer slot (F3-05, `shell/shell_tokenizer.asm`) |
+| `0x3800..0x3BFF` | 1024 bytes | Dispatch slot (F3-06, `shell/shell_dispatch.asm`) |
+| `0x3C00..0x5FFF` | 9216 bytes | Reserved for future slots; any new slot is a versioned layout change (section 10.3) |
+| `0x6000..0x6BFF` | 3072 bytes | Output mirror; runtime I/O only (section 5.2). Static data is forbidden here |
+| `0x6C00..0x6DFF` | 512 bytes | `help_block` static text (F3-06) |
+| `0x6E00..0x77FF` | 2560 bytes | Static data: fixtures, embedded samples, generated-at-runtime bases |
 | `0x7230` | 4 bytes | Frozen wait status slot |
+| `0x7800..0x7FFB` | 2044 bytes | Software stack region; `SP_INIT = 0x7FFC`, push pre-decrements SP, first push at `0x7FF8` |
+| `0x7FFC..0x7FFF` | 4 bytes | Stack top word; never pushed into |
 | `0x8000..0xFFFF` | 32768 bytes | Outside the Front 3 data split; do not use |
 
-The image is loaded at virtual address 0 and the first page is mapped by the loader (`kernel.asm:603-631`). Code above `0x6000` is forbidden even though the loader accepts a larger image. The 24 KB code cap is a Front 3 choice, not a loader limit.
+Slots have fixed boundaries. Editing a component's content never moves any address; a component that exceeds its slot fails the build with the component name and overflow size, and widening a slot is a versioned layout change (section 10.3).
+
+The image is loaded at virtual address 0 and pages inside the loaded image length are mapped by the loader (`kernel.asm:603-631`); a full 32 KiB image maps 8 pages, VA `0x0000..0x7FFF`. Code above `0x5FFF` is forbidden even though the loader accepts a larger image. The kernel starts the user SP at `0xC0000000`, so the entry wrapper materializes `MV SP, #0x7FFC` before any stack use.
+
+VA `0x15A0`, inside the runtime library slot, is the low alias of kernel breakpoint `b 5536` (`0xC00015A0`). The TUI matches both the low and the high address (`tui.go:213-216`), so legacy TUI runs may stop on rt library code by mistake; the headless runner (section 9.6) recognizes only the high addresses, and legacy TUI evidence must record which address fired.
 
 Loader limits: `LoadBuffer` rejects an image longer than `65536 - 4 = 65532` bytes (`machine/zepa.go`, `bufferSize` and `LoadBuffer`). The cross-assembler emits 4-byte words, so every image length is a multiple of 4. An image may be shorter than `0x8000`; pages inside the loaded image length are mapped by the loader, and pages beyond it are demand-mapped on first touch by the page-fault handler (`kernel.asm:831-964`).
 
@@ -195,26 +213,28 @@ The fake `stub_write` writes to the output mirror:
 
 Payload capacity is `0x6BFC - 0x6000 = 3068` bytes. A fake write that would exceed capacity fails with a negative return and copies nothing. The mirror is secondary evidence (section 9); the primary evidence is an in-guest comparison and `exit 10`.
 
-### 5.3 `rt.asm` prologue
+### 5.3 `rt_header.asm` and the runtime library
 
-Every image begins with the same 216-byte header:
+Every image begins with the same 216-byte header, delivered by `rt/rt_header.asm` (F3-03):
 
 | Offset | Content |
 |---|---|
 | `0x000` | One `JUMP _start` word. At instruction 0 the label resolves to a relative offset of 54 instructions, so the CPU lands on `0x0D8`. |
 | `0x004..0x0CB` | The 200-byte argv window from section 4.1. Placeholder words; the shell overwrites them with runtime data before fork. |
 | `0x0CC..0x0D7` | Three reserved padding words. Never executed. |
-| `0x0D8` | `_start`, the first utility or shell instruction. |
+| after word 54 | The label `_start:`, with no additional instruction, so the isolated header assembles to exactly 216 bytes and `JUMP _start` resolves to offset 54. When the aggregate source is composed (section 5.5), `_start` binds to the first instruction of the next component. |
+
+`rt/rt.asm` is the runtime library (`memcpy`, `strcmp`, `strlen`, `itoa`, `do_wait`, and the rest from F3-03/F3-04). It is composed after the header inside the runtime library slot; it is not the header and carries no size constraint of its own beyond that slot. F3-03 delivers both `rt_header.asm` and the first library batch.
 
 Build-time assertions:
 
-1. The assembled `rt.asm` object is exactly 216 bytes.
-2. The symbol `_start` resolves to byte address `0x0D8`, which is instruction index 54.
+1. The assembled `rt_header.asm` object, taken alone, is exactly 216 bytes.
+2. The symbol `_start` resolves to byte address `0x0D8` in the composed image, which is instruction index 54.
 3. The first instruction is a jump whose relative immediate is `54`.
 
 Every standalone flat image carries a build-time entry wrapper, before the utility body, that establishes a valid W8. At `_start` the wrapper loads W8 with the absolute address of the exit trampoline and then enters the utility body; the trampoline (`OR W8, W9, W9` / `SYSCALL #2`) sits after the body and is reached only via the utility's `JMPR W8`. Utility source stays shared. Front 2 supplies no link. F3-15 (#47) owns the build; F3-13 (#5) owns the wiring.
 
-The assert belongs to the image build pipeline (F3-15). A per-utility prologue is forbidden because it would move the frozen window and code addresses.
+The header and layout asserts belong to the image build pipeline (F3-15). A per-utility prologue is forbidden because it would move the frozen window and code addresses; the entry wrapper is prepended by the build at composition time, not written into utility sources.
 
 ### 5.4 Assembler constraints
 
@@ -224,6 +244,29 @@ The cross-assembler has no data-section directive. Every line is an instruction 
 2. Use literal addresses in `MV`, `LDD`, and `STRD`. Never write `MV W0, #some_label`.
 3. `MV` takes a 16-bit signed immediate. Every frozen Front 3 address is at or below `0x7FFF`, so every frozen address is directly loadable. Addresses at or above `0x8000` require construction with shifts and adds.
 4. `MV` does not copy a register. Copy with `OR Wd, Ws, Ws`; this is the idiom used to move a `stub_*` argument from W7 into the syscall argument register W8.
+5. Labels are resolved only within the single assembler call (one source file, `cross-assembler.go:258-295`). There is no linkage between separately assembled objects, which is why composition is defined at source level in section 5.5.
+
+### 5.5 Composition model
+
+The image is composed at source level, never by concatenating independently assembled objects. The build pipeline (F3-15) generates one aggregate `.asm` in slot order — `rt_header`, shell, runtime library, stubs, `true`, `false`, `pid`, `echo`, `wc`, tokenizer, dispatch — with each component padded to its slot boundary, invokes `RunAssembler` exactly once on that aggregate, and pads the emitted binary with zero words to 32768 bytes.
+
+Ground truth: `RunAssembler` returns a flat binary of 4-byte words and resolves labels to relative instruction offsets within one call only (`cross-assembler.go:217-295`); `Machine.LoadBuffer` accepts up to `65532` bytes and maps `ceil(size/4096)` pages (`machine/zepa.go:89-91`, `kernel.asm:519-631`), so a 32768-byte image maps 8 pages with no partial-page padding.
+
+The build fails the composition if any component exceeds its slot. F3-15 proves the pipeline on synthetic smoke components sized to every slot boundary; each later task (F3-05, F3-06, F3-07, F3-08, F3-09, F3-10, F3-11) then drops its real component into its slot and re-runs the same pipeline.
+
+### 5.6 Utility table
+
+The utility table is data in the stub slot. Entry `i` lives at `0x1800 + 4*i`, 32-bit little-endian, and holds the absolute code address of slot `i`:
+
+| Index | Utility | Slot address |
+|---|---|---|
+| 0 | `true` | `0x2000` |
+| 1 | `false` | `0x2400` |
+| 2 | `pid` | `0x2800` |
+| 3 | `echo` | `0x2C00` |
+| 4 | `wc` | `0x3000` |
+
+The build generates the table words from the same slot manifest that drives composition, patches them little-endian at `0x1800`, and asserts the emitted values against the manifest. A hand-typed entry that diverges from the manifest is a build error, not a runtime bug. `stub_exec` loads entry `i` with `LDD` from `0x1800 + 4*i` and never hard-codes a utility address.
 
 ## 6. Exit codes and wait status
 
@@ -292,7 +335,7 @@ All public labels use the internal call convention from section 1.2. `stub_exec`
 | `stub_exec` (host-load exec path) | W7 = Front-2-issued opaque ImageID | Never returns | Not provided by the fake layer | `OR W8, W7, W7`; `SYSCALL #5` (Front 2 `exec`); never returns; no dynamic argv; call-site-visible |
 | `stub_readfile` | W7 = path pointer; W6 = destination; W5 = maximum bytes | W9 = bytes copied (truncated to W5), or negative if not found | Resolve the name against an embedded name-to-blob table; copy whole file; truncate to W5 | Front 2 filesystem read (F2-CR-1); id 8 is not an agreed Front 2 ABI |
 
-The real `stub_read` and `stub_write` spill the W8 link to a 4-byte stack slot (or equivalent owned memory word) before they overwrite W8 with the syscall argument, reload it after the trap, and return with `JMPR W8`. A register-only save is non-conforming. This is required because `SYSCALL` saves and restores the W8 value at the trap, which is the syscall argument, not the stub's return link (section 1.1). Fake stubs leave W8 untouched and return with `JMPR W8`.
+The real `stub_read` and `stub_write` spill the W8 link to a 4-byte stack slot before they overwrite W8 with the syscall argument, reload it after the trap, and return with `JMPR W8`. A register-only save is non-conforming. The stack slot lives in the frozen stack region (`0x7800..0x7FFB`); push pre-decrements `SP`, whose initial value is `SP_INIT = 0x7FFC`, materialized by the entry wrapper with `MV SP, #0x7FFC` because the kernel starts the user SP at `0xC0000000`. This is required because `SYSCALL` saves and restores the W8 value at the trap, which is the syscall argument, not the stub's return link (section 1.1). Fake stubs leave W8 untouched and return with `JMPR W8`.
 
 ### 7.2 Swap rule
 
@@ -312,7 +355,7 @@ Every standalone flat image carries a build-time entry wrapper that establishes 
 
 Front 3 does not define the TUI console mechanism. The requirements are frozen in the INT-06 bridge:
 
-- INT-06 (#48) amendments 1-4, requirements R1 through R6 (bridge file pending; current tree copy is DRAFT on `docs/int-06-console-io-1`). Those amendments are normative for console mechanics; this document stays normative for the syscall ABI.
+- INT-06 (#48) amendments 1-4, requirements R1 through R6 (signed content lives in issue #48; the closed draft PR #51 is superseded and no tree copy is normative). Those amendments are normative for console mechanics; this document stays normative for the syscall ABI.
 - R1: a TUI mechanism delivers a typed line to `read` (6).
 - R2: `write` (7) output is displayed on a readable console surface.
 - R3: newline semantics are explicit; one line terminator byte.
@@ -378,13 +421,34 @@ An unreviewed breakpoint address is not evidence.
 A recorded run names, in order:
 
 1. The revision (`git -C zepa-machine rev-parse HEAD`).
-2. The exact TUI commands (`b`, `input`, `d`, `reg`, `pcb`, `refresh`).
-3. Each observed breakpoint line with its instruction count.
-4. The PCB W9 value before cleanup, with the PID.
+2. The harness used: headless runner (section 9.6) or legacy TUI. TUI runs record the exact commands (`b`, `input`, `d`, `reg`, `pcb`, `refresh`) and which address fired for aliased breakpoints (`0x0FC4`/`0x15A0` low, `0xC0000FC4`/`0xC00015A0` high).
+3. Each observed stop with its instruction count.
+4. The PCB W9 value before cleanup, with the PID, plus the saved PC where the runner reports it.
 5. The in-guest result (exit code 10 or 60/61) and the mirror length.
 6. Any skipped check, with the reason.
 
 Do not paste reconstructed output. If a run was not executed, label the artifact as unexecuted.
+
+### 9.6 Headless runner (primary harness)
+
+The primary evidence harness is the headless runner owned by F3-15 (#47): a `go` command in `zesh` that boots the machine, runs a composed image, and reports exit events without the TUI and without `play`'s 100 ms per instruction. The runner module uses the submodule directly:
+
+```text
+require zepa-machine v0.0.0
+replace zepa-machine => ../zepa-machine
+```
+
+The `machine` package imports no TUI toolkit (`machine/zepa.go:3-8`), so the runner needs no build tags. It reproduces the kernel boot of `main_kernel.go:26-65`: mount the kernel image, set `0x2000`, `0x2004`, `0x2008`, start `Boot`, wait for boot completion, and only then inject the program (`RunAssembler` output through `LoadBuffer`, checking the returned boolean the TUI currently ignores).
+
+Exit capture rules:
+
+1. Stop only at the high post-exit address `0xC0000FC4`, never at the low alias.
+2. Read `running_pid = LE32(memory[0x2010:])`, `pcb = 0x2024 + pid*0x300050`, `status = LE32(memory[pcb+56:])`, `saved_pc = LE32(memory[pcb+60:])` (offsets per `machine/debug.go:1321-1348`).
+3. Register every exit event. Fork harnesses hit the child's exit first; the runner either lists all events or takes a root-PID selector, so a parent's collected-status proof is never read off the child's exit.
+4. Report the saved PC: it distinguishes a clean `false` exit (1) from a fault (also 1) by the one-past-`SYSCALL` return address.
+5. Enforce a configurable instruction limit. `Boot` never completes and a lost stop spins forever; the runner aborts at the limit and labels the run as timed out.
+
+The runner does not translate VA to PA for host-side dumps (`GetMemory` returns physical memory, `machine/zepa.go:638-640`). Assertions stay in-guest per section 9.1; the mirror remains secondary until F1-CR-3 lands. The runner replaces `play`-based waiting in all future evidence; legacy TUI transcripts recorded before the runner remain valid for their revisions.
 
 ## 10. Boundaries and change requests
 
@@ -401,7 +465,7 @@ Do not paste reconstructed output. If a run was not executed, label the artifact
 
 | ID | Owner | Request | Blocks | Status |
 |---|---|---|---|---|
-| F1-CR-1 | Front 1 | Console input/output channel satisfying INT-06 (#48) amendments 1-4 R1 through R6 (bridge file pending; current tree copy is DRAFT on `docs/int-06-console-io-1`), plus kernel `read` (6) and `write` (7) | F3-12 only | Open, non-blocking for F3-03 through F3-11 |
+| F1-CR-1 | Front 1 | Console input/output channel satisfying INT-06 (#48) amendments 1-4 R1 through R6 (signed content lives in issue #48; the closed draft PR #51 is superseded and no tree copy is normative), plus kernel `read` (6) and `write` (7) | F3-12 only | Open, non-blocking for F3-03 through F3-11 |
 | F1-CR-2 | Front 1 | Optional multi-argument syscalls using W7 and W6 as argument 2 and 3 | Nothing | Optional, non-blocking |
 | F1-CR-3 | Front 1 | `mem <addr> <len>` raw memory dump in the TUI | Mirror-primary acceptance criteria only | Open, non-blocking; in-guest asserts are normative (see #60) |
 | F1-CR-4 | Front 1 | Move the proposed console frame off PCB 1's page table; frame selection and reservation are owned by INT-06 (#48 amendment 1) and F1-03 (#55) | INT-06 | Open, non-blocking for F3-01 |
