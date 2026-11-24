@@ -63,3 +63,22 @@ rt_strlen_loop:
     JUMP rt_strlen_loop
 rt_strlen_done:
     JMPR W8
+
+; rt_do_wait - wait for a child through the touch idiom (contracts.md 6.2)
+;   in:  nothing; SP must point into the stack region (SP_INIT = 0x7FFC)
+;   out: W9 = child PID, or -1 when there are no children
+;        child status word at 0x7230 (valid only when W9 is a PID)
+;   SYSCALL takes the slot in W8, so the link is spilled to the stack.
+;   Uses 4 bytes of stack. Clobbers W1, W9. Syscall: wait (1).
+rt_do_wait:
+    MV W1, #4
+    SUB SP, SP, W1
+    STORE W8, SP            ; push link
+    MV W1, #0x7230
+    STORE W0, W1            ; touch: maps the slot page (value irrelevant)
+    OR W8, W1, W1           ; W8 = status slot address
+    SYSCALL #1
+    LOAD W8, SP             ; pop link
+    MV W1, #4
+    ADD SP, SP, W1
+    JMPR W8
