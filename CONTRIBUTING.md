@@ -35,7 +35,7 @@ and integrate work across fronts.
 
 ## 2. Repository structure
 
-Target layout — directories appear as their issues land (`rt/`, `io/`, `shell/`, and `utils/` do not exist yet).
+Target layout — directories appear as their issues land (`io/`, `shell/`, and `utils/` do not exist yet).
 
 | Path | Content |
 |---|---|
@@ -44,6 +44,7 @@ Target layout — directories appear as their issues land (`rt/`, `io/`, `shell/
 | `io/` | Stub and real syscall wrappers |
 | `shell/` | Shell sources in ZEPA assembly |
 | `utils/` | `echo`, `true`, `false`, `pid`, `wc` sources |
+| `tools/` | Build and test helper scripts |
 | `docs/` | Report drafts, demo logs, meeting notes |
 | `zepa-machine/` | Submodule pointer to the fork (see section 9) |
 
