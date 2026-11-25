@@ -1,0 +1,25 @@
+F3-03 strlen_test transcript: rt_strlen exit-code test.
+
+Record of one TUI run; observed lines are copied from the TUI panes.
+Source: rt/strlen_test.asm + rt/rt.asm
+Image: build/strlen_test.asm  (tools/rt_link.sh rt/strlen_test.asm -> build/strlen_test.asm)
+Machine: zepa-machine @ e8fd798 (`git -C zepa-machine rev-parse HEAD`),
+  binary built with `go build -tags kernel .` (go1.23.1), started as
+  `<binary> 2GB 128` from the zepa-machine directory, fresh tmux session.
+Harness: legacy TUI (the headless runner of contracts.md 9.6 is F3-15).
+
+Commands (entered in order at the `cmd>` prompt):
+  b 300
+  input ../build/strlen_test.asm
+  b 4036
+
+Observed (pane lines):
+  Breakpoint reached at pc=300 after 1613892 instructions   (boot complete)
+  input sent (392 bytes)
+  Breakpoint reached at pc=4036 after 215303 instructions
+  The post-exit stop fired at the high address 0xC0000FC4 (Registers pane pc).
+  Process table: PID 0, flags M..R, saved W9 = 10, saved PC = 192
+
+Skipped checks: none.
+
+Conclusion: in-guest result exit 10 (strlen("hello") = 5, strlen("") = 0); no fault. Mirror: output mirror not used (no stub_write in this test). 
