@@ -85,7 +85,33 @@ Option (i) is recommended. Options (ii) and (iii) remain useful for scripted reg
 
 ### 3.2 Console block (addresses and slots)
 
-The block is one reserved 4 KiB frame, **physical `0x00303000`**, kernel alias **`0xC0303000`**. It sits after the PCB vector, which ends at physical `0x00302074` (`sackOS/abstract_implementation.md` address map: PCB vector at `0x2024`, size `0x300050`), and far below the kernel page table at `0x30007024`. Front 1 must mark the frame used in the bitmap at boot and map it in the kernel page table, so no user process can be allocated it.
+#### Frame
+
+The block is one reserved 4 KiB frame at **physical `0x3012A000`**, range **`[0x3012A000, 0x3012B000)`**.
+
+- **Kernel alias.** The canonical contract label is **`0xC03012A000`**. Under the current kernel mapping rule (kernel VA = physical + `0xC0000000`) the mapped kernel VA is **`0xF012A000`** (`0x3012A000 + 0xC0000000`). F1-03 implements the arithmetic form.
+- **Bitmap-adjacency rule.** The frame is the first 4 KiB-aligned frame after Front 2's F2-01 frame bitmap `[0x30109024, 0x30129024)`: the bitmap ends at `0x30129024`, and the next multiple of `0x1000` is `0x3012A000`. Moving the frame, or growing the bitmap into `0x3012A000`, needs a new contract.
+- **Ownership.** F1-03 (#55) owns the reservation: marking the frame used in the frame bitmap at boot, before the first schedule; guaranteeing the kernel mapping; and zeroing the six header words below. No user or kernel allocation may receive this frame.
+
+#### Non-overlap with F2-01 regions
+
+The frame must not overlap any F2-01 physical region. At the signed layout it is disjoint from all of them:
+
+| F2-01 region | Physical range | Relation to `[0x3012A000, 0x3012B000)` |
+|---|---|---|
+| Code | `[0x00000000, 0x00004000)` | Below |
+| Constants / variables | `[0x00004000, 0x00004024)` | Below |
+| PCB vector, 256 × `0x300050`, including every per-PCB page table | `[0x00004024, 0x30009024)` | Below |
+| KPTR (kernel page table, 1 MiB) | `[0x30009024, 0x30109024)` | Below |
+| Frame bitmap | `[0x30109024, 0x30129024)` | Below; gap `[0x30129024, 0x3012A000)` is alignment padding |
+| Stack | `[0x3FFC0000, 0x3FFD0000)` | Above |
+| Control | `[0x3FFD0000, 0x3FFE0000)` | Above |
+| Image | `[0x3FFE0000, 0x3FFF0000)` | Above |
+| Buffer | `[0x3FFF0000, 0x40000000)` | Above |
+
+**Superseded address.** The draft's `0x00303000` (alias `0xC0303000`) is not reusable. It lies inside the PCB vector: at `zepa-machine @ e8fd798` (vector at `0x2024`) it falls inside PCB 1's 3 MiB page table `[0x003020C4, 0x006020C4)`, and under the F2-01 layout (vector at `0x4024`) it falls inside PCB 0's page table `[0x00004074, 0x00304074)`. A console ring there would corrupt a process's address space. This is `F1-CR-4` in `contracts.md` §10.2.
+
+#### Layout
 
 | Offset | Size | Slot | Writer → reader |
 |---|---|---|---|
@@ -93,14 +119,17 @@ The block is one reserved 4 KiB frame, **physical `0x00303000`**, kernel alias *
 | `0x004` | 4 | `CON_IN_TAIL` — monotonic bytes consumed | kernel → TUI |
 | `0x008` | 4 | `CON_IN_FLAGS` — bit 0 `EOF`, bit 1 `DATA`, bit 2 `ATTACHED` | TUI → kernel |
 | `0x00C` | 4 | reserved (zero) | — |
-| `0x010` | 2048 | `CON_IN_BUF` — byte ring, index `counter & 0x7FF` | TUI → kernel |
-| `0x810` | 4 | `CON_OUT_HEAD` — monotonic bytes written | kernel → TUI |
-| `0x814` | 4 | `CON_OUT_TAIL` — monotonic bytes consumed | TUI → kernel |
-| `0x818` | 4 | `CON_OUT_FLAGS` — bit 0 `OVERFLOW` (diagnostic) | kernel → TUI |
-| `0x81C` | 4 | reserved (zero) | — |
-| `0x820` | 2048 | `CON_OUT_BUF` — byte ring, index `counter & 0x7FF` | kernel → TUI |
+| `0x010` | 1024 | `CON_IN_BUF` — byte ring `[0x010, 0x410)`, index `counter & 0x3FF` | TUI → kernel |
+| `0x410` | 4 | `CON_OUT_HEAD` — monotonic bytes written | kernel → TUI |
+| `0x414` | 4 | `CON_OUT_TAIL` — monotonic bytes consumed | TUI → kernel |
+| `0x418` | 4 | `CON_OUT_FLAGS` — bit 0 `OVERFLOW` (diagnostic) | kernel → TUI |
+| `0x41C` | 4 | reserved (zero) | — |
+| `0x420` | 1024 | `CON_OUT_BUF` — byte ring `[0x420, 0x820)`, index `counter & 0x3FF` | kernel → TUI |
+| `0x820` | 2016 | unused, `[0x820, 0x1000)`; no `CON_*` slot may be placed here without a new contract | — |
 
-Both rings are byte rings with monotonically increasing 32-bit counters and power-of-two capacity. Full condition: `head - tail == 2048`; empty: `head == tail`. Bytes are raw; the kernel performs no line translation.
+Both rings are byte rings with monotonically increasing 32-bit counters and power-of-two capacity 1024. Full condition: `head - tail == 1024`; empty: `head == tail`. Bytes are raw; the kernel performs no line translation. At boot the six header words (`CON_IN_HEAD`, `CON_IN_TAIL`, `CON_IN_FLAGS`, `CON_OUT_HEAD`, `CON_OUT_TAIL`, `CON_OUT_FLAGS`) are zero, so both rings read as empty; the ring bytes need not be zeroed.
+
+**Feasibility.** The last ring byte is at offset `0x81F` (physical `0x3012A81F`), so the whole layout fits in `[0x3012A000, 0x3012B000)` and no offset reaches `0x1000`. The draft's two 2048-byte rings did not fit: `CON_OUT_BUF` at `0x820` plus 2048 bytes ends at `0x1020`, 32 bytes past the frame. Option (a) of the #48 feasibility gate is therefore signed: two 1024-byte rings in the fixed 4 KiB frame. This matches `contracts.md` §3.2 ("two 1024-byte rings") and the TUI's 1023-byte line limit (§3.3): a maximal line plus its LF is exactly 1024 bytes and fits an empty input ring. F1-03 and F1-05 consume this layout.
 
 TUI access must go through a `machine` accessor that takes `m.mu` (the machine's existing mutex) — the TUI must not write the backing array directly while `Boot` may be executing. Front 1 owns that accessor together with the interrupt flag; the TUI only calls `EnqueueConsoleBytes` / `SetConsoleEOF` / `DrainConsoleOutput`.
 
@@ -160,7 +189,7 @@ The sequence depends on the proposed `console on|off` commands and on the pump. 
 
 | Side | Owns |
 |---|---|
-| **Front 1** (@arthurlazevedo) | Kernel `read`/`write` implementations per #8; reservation and mapping of `0x00303000`; `CON_*` layout; console interrupt, blocked-reader state and wake; output ring producer and short-write behavior; the `machine` accessor and console flag. |
+| **Front 1** (@arthurlazevedo) | Kernel `read`/`write` implementations per #8; reservation and mapping of `0x3012A000` (F1-03); `CON_*` layout; console interrupt, blocked-reader state and wake; output ring producer and short-write behavior; the `machine` accessor and console flag. |
 | **Front 3** (@matheusvir) | Shell read loop, LF/EOF handling and short-write retry; TUI console pane, `console on|off` routing and pump; the demo script and its evidence log. |
 | **Front 2** (for awareness) | #24 execution coordination may own or replace the console pump; no console-block layout changes expected. |
 
