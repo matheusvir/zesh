@@ -1,0 +1,22 @@
+F3-03 rt_header_alone transcript: rt/rt_header.asm assembled alone.
+
+Record of one TUI run; observed lines are copied from the TUI panes.
+Source: rt/rt_header.asm
+Machine: zepa-machine @ e8fd798 (`git -C zepa-machine rev-parse HEAD`),
+  binary built with `go build -tags kernel .` (go1.23.1), started as
+  `<binary> 2GB 128` from the zepa-machine directory, fresh tmux session.
+Harness: legacy TUI (the headless runner of contracts.md 9.6 is F3-15).
+
+Commands (entered in order at the `cmd>` prompt):
+  b 300
+  input ../rt/rt_header.asm
+
+Observed (pane lines):
+  Breakpoint reached at pc=300 after 1613892 instructions   (boot complete)
+  input sent (216 bytes)
+
+Skipped checks: execution after input: not stepped. The header has no instruction after
+  _start, so the image is not meant to run alone.
+
+Conclusion: rt/rt_header.asm assembles alone with zero assembler errors to exactly
+  216 bytes (contracts.md 5.3, assertion 1; the build-time assertion itself is F3-15).

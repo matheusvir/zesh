@@ -46,6 +46,7 @@ Target layout — directories appear as their issues land (`io/`, `shell/`, and 
 | `utils/` | `echo`, `true`, `false`, `pid`, `wc` sources |
 | `tools/` | Build and test helper scripts |
 | `docs/` | Report drafts, demo logs, meeting notes |
+| `evidence/` | Test transcripts and probes, one folder per task (`evidence/f3-03/`) |
 | `zepa-machine/` | Submodule pointer to the fork (see section 9) |
 
 Assembly file naming: `<component>_<name>.asm` in English, for example
