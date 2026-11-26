@@ -1,0 +1,109 @@
+name: Discord weekly report reminder
+
+on:
+  schedule:
+    # 20:00 America/Sao_Paulo (UTC-3, no daylight saving time).
+    - cron: '0 23 * * 1'
+    - cron: '0 23 * * 2'
+  workflow_dispatch:
+    inputs:
+      day:
+        description: Reminder text to test (no ping)
+        type: choice
+        options: [monday, tuesday]
+        default: monday
+        required: false
+
+permissions: {}
+
+jobs:
+  remind:
+    # Install only in zesh.
+    if: github.repository == 'matheusvir/zesh'
+    runs-on: ubuntu-latest
+    env:
+      DISCORD_ALERTS_WEBHOOK_URL: ${{ secrets.DISCORD_ALERTS_WEBHOOK_URL }}
+      DISCORD_DEV_ROLE_ID: ${{ vars.DISCORD_DEV_ROLE_ID }}
+      EVENT_NAME: ${{ github.event_name }}
+      TEST_DAY: ${{ inputs.day }}
+      SCHEDULE: ${{ github.event.schedule }}
+    steps:
+      - name: Send weekly report reminder
+        run: |
+          python3 <<'PY'
+          import datetime
+          import json
+          import os
+          import re
+          import sys
+          import urllib.error
+          import urllib.request
+
+          DEFAULT_ROLE_ID = "1550294401618808902"
+          USER_AGENT = "zesh-discord-notifications"
+          MESSAGES = {
+              "monday": "📝 <@&{role}> Lembrete: enviem o report das atividades da semana. O prazo é **terça às 23h59**.",
+              "tuesday": "⏰ <@&{role}> Último lembrete: o report semanal vence **hoje às 23h59**. Quem ainda não enviou, envie agora.",
+          }
+
+          def local_now():
+              try:
+                  from zoneinfo import ZoneInfo
+                  zone = ZoneInfo("America/Sao_Paulo")
+              except (ImportError, KeyError, OSError, ValueError):
+                  zone = datetime.timezone(datetime.timedelta(hours=-3))
+              return datetime.datetime.now(zone)
+
+          def build_message(event_name, test_day, now, role_id):
+              if event_name == "schedule":
+                  # Pick the text by the cron that fired, so a delayed run keeps its own text.
+                  day = {"0 23 * * 1": "monday", "0 23 * * 2": "tuesday"}.get(os.environ.get("SCHEDULE", "").strip())
+                  day = day or {0: "monday", 1: "tuesday"}.get(now.weekday())
+                  if not day:
+                      return None
+                  return MESSAGES[day].format(role=role_id), [role_id]
+              if event_name == "workflow_dispatch":
+                  day = test_day or "monday"
+                  if day not in MESSAGES:
+                      raise ValueError("invalid day")
+                  return "[Teste] " + MESSAGES[day].format(role=role_id), []
+              return None
+
+          def post(content, role_ids):
+              webhook = os.environ.get("DISCORD_ALERTS_WEBHOOK_URL", "")
+              if not webhook:
+                  print("Missing Discord webhook secret for alerts; message not sent.", file=sys.stderr)
+                  return False
+              data = json.dumps({"content": content, "allowed_mentions": {"parse": [], "roles": role_ids}}).encode("utf-8")
+              try:
+                  request = urllib.request.Request(webhook, data=data, headers={"Content-Type": "application/json", "User-Agent": USER_AGENT}, method="POST")
+                  with urllib.request.urlopen(request, timeout=8) as response:
+                      if 200 <= response.status < 300:
+                          return True
+                      print(f"Discord returned HTTP {response.status}; message not sent.", file=sys.stderr)
+              except urllib.error.HTTPError as error:
+                  print(f"Discord returned HTTP {error.code}; message not sent.", file=sys.stderr)
+              except Exception:
+                  # Exception text may contain the webhook URL; never print it.
+                  print("Discord request failed or timed out; message not sent.", file=sys.stderr)
+              return False
+
+          def main():
+              role_id = os.environ.get("DISCORD_DEV_ROLE_ID", "").strip() or DEFAULT_ROLE_ID
+              if not re.fullmatch(r"[0-9]{17,20}", role_id):
+                  print("DISCORD_DEV_ROLE_ID must have 17 to 20 digits; message not sent.", file=sys.stderr)
+                  sys.exit(1)
+              try:
+                  message = build_message(os.environ.get("EVENT_NAME", ""), os.environ.get("TEST_DAY", ""), local_now(), role_id)
+              except ValueError:
+                  print("The day input must be monday or tuesday; message not sent.", file=sys.stderr)
+                  sys.exit(1)
+              if message is None:
+                  print("No reminder for this event or day.")
+                  return
+              if not post(*message):
+                  sys.exit(1)
+
+          if __name__ == "__main__":
+              main()
+          PY
