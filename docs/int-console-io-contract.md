@@ -29,7 +29,7 @@ These six requirements come from the shell arc and are not open for renegotiatio
 | R5 | **Blocking does not freeze the TUI**: when the shell blocks on an empty buffer, the debugger still redraws and accepts console input. |
 | R6 | F3-12 gets a **reproducible command sequence** that, once the mechanism lands, a pair can run as-is; it is specified against `zepa-machine @ e8fd798` and re-validated against later revisions. |
 
-R6 is the demo contract; the exact screen contents are asserted by F3-12, not here.
+R6 is the demo contract; the exact screen contents are asserted by F3-12, not here. `zepa-machine @ e8fd798` stays the reference revision for these shell-side requirements, but executing the R6 sequence needs a console-capable revision; see §3.5.
 
 ## 2. Current state of the TUI (as of `zepa-machine` @ `e8fd798`)
 
@@ -169,11 +169,11 @@ Reconciled with `contracts.md` §3.2 rule 3 (`contracts.md:90`). This replaces t
 
 Front 1 implements console mode in F1-08 (#60). A new debugger command `console` toggles attachment:
 
-- `console on` sets `ATTACHED`, switches the input field's submit target to the guest, and starts a **console pump**: the TUI issues `StepChan` continuously (instead of the 100 ms `play` ticker) while redrawing at a bounded rate (for example every 100 ms). The pump stops on `console off`, on a breakpoint stop, or on `q`.
-- `console off` clears `ATTACHED`, stops the pump, and restores the debugger command parser.
+- `console on` sets `ATTACHED`, switches the input field's submit target to the guest, and requests a **console pump** from the F2-08 (#24) execution coordinator: a "run continuously while attached" mode (instead of the 100 ms `play` ticker), with redraws at a bounded rate (for example every 100 ms). The TUI never spawns its own stepper; the coordinator remains the single `StepChan` emitter. The pump stops on `console off`, on a breakpoint stop, or on `q`.
+- `console off` clears `ATTACHED`, ends the coordinator's console mode, and restores the debugger command parser.
 - While detached, every existing command behaves exactly as today.
 
-The pump exists because `play` at 100 ms/step cannot execute the kernel/shell path in demo time. It is a TUI scheduling change, not a VM change, and it ships with F1-08's console mode. How breakpoints and single-step interact with it remains open (§4 item 4).
+The pump exists because `play` at 100 ms/step cannot execute the kernel/shell path in demo time. It is a coordinator mode, not a VM change; F1-08 requests it as part of console mode. How breakpoints and single-step interact with it remains open (§4 item 4).
 
 ### 3.5 Reproducible demo sequence (target for F1-12 and F3-12)
 
@@ -207,7 +207,7 @@ Expected, for the F1-12 and F3-12 evidence runs:
 
 Exit-status capture is deliberately not in this sequence. Arming `b 4036` while the console pump is running is an execution-coordination problem (the current `b` is itself a foreground step-run, so issuing it before `exit` would step a blocked shell forever, and issuing it after `exit` races cleanup). F3-12 must capture status 0 through an armed-breakpoint/run mechanism or via its harness; see §4 item 4. This sequence proves R1–R5 and the console transcript for R6, not the exit code.
 
-The sequence depends on the `console on|off` commands and on the pump. It cannot run against `zepa-machine @ e8fd798`, which has no console, so it is not an acceptance criterion of #48. #48 is done when this document is amended and signed. The executable demo is owned by **F1-12** (#64), which produces the Front 1 evidence on a console-capable revision, and **F3-12** (#4), which owns the byte-for-byte assertions and the status-capture harness. It becomes runnable once F1-03, F1-06, F1-07 and F1-08 land.
+The sequence depends on the `console on|off` commands and on the pump. It cannot run against `zepa-machine @ e8fd798`, which has no console, so it is not an acceptance criterion of #48. #48 is done when this document is amended and signed. The executable demo is owned by **F1-12** (#64), which produces the Front 1 evidence on a console-capable revision, and **F3-12** (#4), which owns the byte-for-byte assertions and the status-capture harness. It becomes runnable once F1-03 (#55), F1-05 (#57), F1-06 (#58), F1-07 (#59) and F1-08 (#60) land; F1-12 also depends on F1-09 and F1-10 and on the shell sample (or its recorded F1-09 substitution).
 
 ### 3.6 Ownership split
 
@@ -215,7 +215,7 @@ The sequence depends on the `console on|off` commands and on the pump. It cannot
 |---|---|
 | **Front 1** (@RenanAF18) | Kernel plumbing: reservation, bitmap marking, mapping and header zeroing of `0x3012A000` (F1-03, #55); `CON_*` layout; `read` per §3.3 (F1-06, #58); all-or-nothing `write` per §3.3 (F1-07, #59); console interrupt, blocked-reader state and wake; the `machine` accessor and console flag. **TUI console integration (F1-08, #60):** `console on` / `console off`, the Console pane, input routing, Ctrl+D, the output drain loop and the console pump. Executable demo evidence (F1-12, #64). |
 | **Front 3** (@matheusvir) | Shell read loop; LF and EOF consumption; retry after a negative `write`; the `stub_read` / `stub_write` swap; the demo script and its byte-for-byte assertions (F3-12, #4). |
-| **Front 2** (awareness only) | #24 (F2-08 execution coordination): no console ownership and no console-block layout changes. |
+| **Front 2** (awareness only) | #24 (F2-08 execution coordination): the coordinator stays the single step emitter that F1-08's console pump requests; no console ownership and no console-block layout changes. |
 
 ## 4. What is NOT decided here
 
@@ -224,7 +224,7 @@ The following are deliberately left open. None of them may be invented by an imp
 1. **Blocking on boot / before attach.** What `read` does if a console client is not attached, and whether `read` blocks forever, returns EOF, or faults when no console session exists. The signed mechanism assumes the shell is attached before it reads.
 2. **TUI focus management and key routing.** How the operator switches between the debugger field and the console field; what Esc does while attached; whether debugger commands remain available via a prefix while attached; how the page-table overlay interacts with console mode. The demo sequence assumes a mode toggle, not a focus policy.
 3. **Escape sequences.** Arrow keys, Ctrl+C (today it quits the whole TUI, `tui.go:328-331`), Ctrl+Z, backspace and any other control byte. This bridge only freezes LF, CR stripping and Ctrl+D-as-EOF. In particular, guest interrupt versus debugger quit is unresolved.
-4. **Execution pacing and breakpoints during console mode.** The pump ships with F1-08 (§3.4). Still open: how breakpoints and single-step interact with the pump; how a breakpoint is armed **without** running the guest synchronously (the current `b` steps in a goroutine until the PC matches, which cannot be combined with a shell blocked in `read`), and the redraw rate. Without a decision, R6 proves the console transcript but not the exit status at `b 4036`.
+4. **Execution pacing and breakpoints during console mode.** The pump is an F2-08 coordinator mode requested by F1-08 (§3.4). Still open: how breakpoints and single-step interact with the pump; how a breakpoint is armed **without** running the guest synchronously (the current `b` steps in a goroutine until the PC matches, which cannot be combined with a shell blocked in `read`), and the redraw rate. Without a decision, R6 proves the console transcript but not the exit status at `b 4036`.
 5. **Console ownership with multiple processes.** Which PID owns the console after `fork`, what a child inherits, and what happens if two processes read concurrently. The shell demo is single-reader; a general answer is out of scope.
 6. **Output-ring back-pressure.** `write` semantics are decided in §3.3 (all-or-nothing, never blocks, no partial or zero-byte short writes). Console scrollback size and whether output produced before `console on` is buffered remain open.
 7. **Interrupt cause numbering.** Front 1 owns the choice of exception cause for the console wake and must publish it in #8/zepa-machine docs. This bridge intentionally does not assign a number.
@@ -232,10 +232,10 @@ The following are deliberately left open. None of them may be invented by an imp
 
 ## 5. Sign-off
 
-| Role | Person | Scope | State |
-|---|---|---|---|
-| Front 1 technical definition | @RenanAF18 | Accepts/amends §3.2–3.3; owns kernel console plumbing | Signed |
-| Front 3 lead / requirements | @matheusvir | Confirms §1; owns shell loop and demo assertions | Signed |
-| Reviewer | @carlosarthurns | Reviews the signed bridge | Approved |
+| Role | Person | Scope | State | Record |
+|---|---|---|---|---|
+| Front 1 technical definition | @RenanAF18 | Accepts/amends §3.2–3.3; owns kernel console plumbing | Signed | [#48 comment](https://github.com/matheusvir/zesh/issues/48#issuecomment-7225370504) |
+| Front 3 lead / requirements | @matheusvir | Confirms §1; owns shell loop and demo assertions | Signed | [#48 comment](https://github.com/matheusvir/zesh/issues/48#issuecomment-7219351037) |
+| Reviewer | @carlosarthurns | Reviews the signed bridge | Pending | Approving review on [#74](https://github.com/matheusvir/zesh/pull/74) |
 
-@matheusvir signs for Front 3 as global lead even while also owning Front 1 tasks; @carlosarthurns reviews for Front 1. Acceptance is recorded as comments on [#48](https://github.com/matheusvir/zesh/issues/48). `contracts.md` references this file as the signed console bridge; this file remains the bridge record and demo reference.
+@matheusvir signs for Front 3 as global lead even while also owning Front 1 tasks; @carlosarthurns reviews for Front 1. Front 1 and Front 3 acceptance is recorded in the #48 comments linked above. The reviewer's approval is the approving review on #74; the #48 sign-off record links it once submitted. `contracts.md` references this file as the signed console bridge; this file remains the bridge record and demo reference.
