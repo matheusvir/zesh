@@ -133,13 +133,35 @@ Both rings are byte rings with monotonically increasing 32-bit counters and powe
 
 TUI access must go through a `machine` accessor that takes `m.mu` (the machine's existing mutex) — the TUI must not write the backing array directly while `Boot` may be executing. Front 1 owns that accessor together with the interrupt flag; the TUI only calls `EnqueueConsoleBytes` / `SetConsoleEOF` / `DrainConsoleOutput`.
 
-### 3.3 Newline, EOF and blocking conventions
+### 3.3 Newline, EOF, blocking, `read` and `write` conventions
 
-- **Newline (R3):** the TUI strips the editor's CR and enqueues the line bytes followed by exactly one LF (`0x0A`). No CR is delivered. The shell may treat LF as the only line terminator. A line longer than 1023 bytes is rejected by the TUI with a visible message and is not enqueued.
+This section states how the console block backs `read` (6) and `write` (7). The buffer encoding, `MAX_XFER = 512` and the return classes stay normative in `contracts.md` §3.1–3.2; nothing here widens them.
+
+- **Newline (R3):** the TUI strips the editor's CR and enqueues the line bytes followed by exactly one LF (`0x0A`). No CR is delivered. The shell may treat LF as the only line terminator. A line longer than 1023 bytes is rejected by the TUI with a visible message and is not enqueued; the limit is the 1024-byte input ring signed in §3.2 (#48 feasibility gate, implemented by F1-05, #57) minus the LF. A line and its LF are enqueued in one accessor call. If the input ring does not have room for all of them, nothing is enqueued: the TUI shows `console input buffer full` in the Console pane and keeps the text for retry (F1-08, #60). "Full" therefore means "no room for the whole line plus its LF", and the kernel never observes half of a submitted line. Front 1 confirmed this rule on [#48](https://github.com/matheusvir/zesh/issues/48#issuecomment-7225370504).
 - **EOF (R4):** Ctrl+D in the TUI is consumed by the TUI; it does **not** enqueue `0x04`. It sets `CON_IN_FLAGS.EOF` after all pending bytes and raises the console wake. A `read` first drains pending bytes; only when the ring is empty and `EOF` is set does it return 0. `EOF` stays set until the TUI enqueues the next line, which clears it. This avoids the ambiguity of using an empty line as EOF (the shell must be able to receive empty lines).
 - **Blocking (R5):** when the ring is empty and `EOF` is clear, `read` blocks the calling process on the console (Front 1 chooses/extends the PCB wait state) and schedules away. The TUI never waits on the guest: it keeps its event loop and redraw ticker running. A console wake (TUI enqueues bytes or sets EOF) readies the blocked process. If Front 1 rejects a new block state, the fallback is a non-blocking return with a distinct "would block" result plus a `rele` in the shell loop; that fallback must be stated explicitly because the shell loop changes.
 - **Wake (R1/R5):** after updating `CON_IN_HEAD` and flags, the TUI sets a new machine-level console flag, raised alongside the existing `killFlag`/`inputFlag` checks in `machine/zepa.go:611-623`. Front 1 implements the console interrupt handler and is free to name the exception cause. The existing `inputFlag` path must not be reused: it still means "load a new program".
-- **Output (R2):** the kernel's `write` appends to `CON_OUT_BUF` and advances `CON_OUT_HEAD`. If the ring is full, the proposed behavior is a **short write** (return the number of bytes copied, possibly 0); the shell retries. `write` must never block the TUI. The TUI drains the ring on each refresh tick and appends the bytes to a scrollable **Console** pane; it advances `CON_OUT_TAIL` only after copying. Bytes are displayed verbatim; escape sequences are not interpreted.
+
+#### `read` (id 6): framing and truncation
+
+Reconciled with `contracts.md` §3.2 rules 4–9 and the PR #52 review.
+
+- **Byte-oriented.** `read` copies at most `min(capacity, pending)` bytes from `CON_IN_BUF` into the caller's payload at `+4`, never more than `MAX_XFER = 512`, stores the byte count at `+0`, returns the same count in W9, and advances `CON_IN_TAIL` by exactly that count.
+- **One line per call; LF included.** A `read` stops after the first LF it consumes. The terminating LF is part of the copied bytes and of the count when it is consumed. A single `read` never returns bytes from two lines.
+- **No terminator added.** No NUL is appended; the caller terminates strings.
+- **Empty line versus EOF.** An empty line is delivered as a single LF and returns 1, never 0. `read` returns 0 at EOF only, which means the ring is empty **and** `CON_IN_FLAGS.EOF` is set. Pending bytes are always delivered before EOF: while any byte is pending, `read` returns data even if `EOF` is set.
+- **Zero capacity.** A capacity of 0 returns 0, writes 0 to `+0` and consumes nothing. It is not EOF.
+- **Lines longer than `MAX_LINE = 128`.** No byte is dropped. A line longer than the caller's capacity is delivered deterministically in chunks: each `read` returns the next `min(capacity, bytes up to and including the LF)` bytes and leaves the remainder in the ring for the next call. Only the last chunk carries the LF. Chunk boundaries depend only on the ring contents and the capacities passed, never on timing, because the TUI enqueues whole lines. A caller that wants a whole line loops until it observes the LF; the shell's own truncate-and-drain rule for overlong lines is Front 3's (`contracts.md` §3.2 rule 8), not the kernel's.
+
+#### `write` (id 7): all-or-nothing
+
+Reconciled with `contracts.md` §3.2 rule 3 (`contracts.md:90`). This replaces the draft's short-write proposal.
+
+- **All-or-nothing up to `MAX_XFER = 512`.** For `0 < length ≤ 512`, if the output ring has at least `length` free bytes (`1024 - (CON_OUT_HEAD - CON_OUT_TAIL)`), the kernel copies all `length` bytes to `CON_OUT_BUF`, advances `CON_OUT_HEAD` by `length` and returns `length`.
+- **Insufficient space.** If the output ring has fewer than `length` free bytes, `write` returns the defined negative error, copies 0 bytes and leaves `CON_OUT_HEAD` unchanged. It may set `CON_OUT_FLAGS.OVERFLOW` as a diagnostic. A `length` above 512 is also rejected with a negative error and 0 bytes copied; it is never truncated to 512. The negative error class is `contracts.md` §3.1 ("negative on error"); its values are owned by F1-01 (#53), which has not yet landed its error table. F1-07 (#59) currently proposes `-3` for insufficient space and `EINVAL` for a length above 512. This bridge does not freeze either value.
+- **Forbidden results.** Partial writes (a return between 1 and `length - 1`) and zero-byte short writes (a return of 0 for `length > 0`) are forbidden. A `length` of 0 returns 0 and copies nothing; that is not a short write.
+- **No blocking.** `write` never blocks the calling process on the TUI and never waits for a drain. A caller that receives the negative error may yield (`rele`) and retry the whole buffer. Because the ring holds 1024 bytes, any legal write fits once the TUI has drained enough of the ring.
+- **Drain (R2).** The TUI drains the output ring on each refresh tick and appends the bytes to a scrollable **Console** pane; it advances `CON_OUT_TAIL` only after copying. Bytes are displayed verbatim; escape sequences are not interpreted.
 
 ### 3.4 TUI-side console mode
 
@@ -202,7 +224,7 @@ The following are deliberately left open. None of them may be invented by an imp
 3. **Escape sequences.** Arrow keys, Ctrl+C (today it quits the whole TUI, `tui.go:328-331`), Ctrl+Z, backspace and any other control byte. The current proposal only freezes LF, CR stripping and Ctrl+D-as-EOF. In particular, guest interrupt versus debugger quit is unresolved.
 4. **Execution pacing and breakpoints during console mode.** Whether the console pump belongs to this bridge, to #24, or to a new TUI run mode; how breakpoints and single-step interact with the pump; how a breakpoint is armed **without** running the guest synchronously (the current `b` steps in a goroutine until the PC matches, which cannot be combined with a shell blocked in `read`), and the redraw rate. Without a decision, R6 proves the console transcript but not the exit status at `b 4036`.
 5. **Console ownership with multiple processes.** Which PID owns the console after `fork`, what a child inherits, and what happens if two processes read concurrently. The shell demo is single-reader; a general answer is out of scope.
-6. **Output-ring back-pressure.** The proposal recommends short writes, but Front 1 must confirm that `write` cannot block the TUI and must state whether a zero-byte short write is allowed. Scrollback size and whether pre-attach output is buffered are also open.
+6. **Output-ring back-pressure.** `write` semantics are decided in §3.3 (all-or-nothing, never blocks, no partial or zero-byte short writes). Console scrollback size and whether output produced before `console on` is buffered remain open.
 7. **Interrupt cause numbering.** Front 1 owns the choice of exception cause for the console wake and must publish it in #8/zepa-machine docs. This bridge intentionally does not assign a number.
 8. **Reset/teardown.** Whether `console off` flushes or discards unread guest input, and how a new `input` interacts with a stale console block.
 
