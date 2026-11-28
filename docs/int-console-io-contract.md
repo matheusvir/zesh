@@ -236,6 +236,6 @@ The following are deliberately left open. None of them may be invented by an imp
 |---|---|---|---|---|
 | Front 1 technical definition | @RenanAF18 | Accepts/amends §3.2–3.3; owns kernel console plumbing | Signed | [#48 comment](https://github.com/matheusvir/zesh/issues/48#issuecomment-7225370504) |
 | Front 3 lead / requirements | @matheusvir | Confirms §1; owns shell loop and demo assertions | Signed | [#48 comment](https://github.com/matheusvir/zesh/issues/48#issuecomment-7219351037) |
-| Reviewer | @carlosarthurns | Reviews the signed bridge | Pending | Approving review on [#74](https://github.com/matheusvir/zesh/pull/74) |
+| Reviewer | @carlosarthurns | Reviews the signed bridge | Approved | [Approving review on #74](https://github.com/matheusvir/zesh/pull/74#pullrequestreview-6094561459) |
 
-@matheusvir signs for Front 3 as global lead even while also owning Front 1 tasks; @carlosarthurns reviews for Front 1. Front 1 and Front 3 acceptance is recorded in the #48 comments linked above. The reviewer's approval is the approving review on #74; the #48 sign-off record links it once submitted. `contracts.md` references this file as the signed console bridge; this file remains the bridge record and demo reference.
+@matheusvir signs for Front 3 as global lead even while also owning Front 1 tasks; @carlosarthurns reviews for Front 1. Front 1 and Front 3 acceptance is recorded in the #48 comments linked above. The reviewer's approval is the approving review on #74; the #48 sign-off record links it. `contracts.md` references this file as the signed console bridge; this file remains the bridge record and demo reference.
