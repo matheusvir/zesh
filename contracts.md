@@ -97,7 +97,7 @@ Rules:
 10. The buffer header and payload must be 4-byte aligned.
 11. `readfile` is not a read/write variant. Its one-argument form is not an agreed Front 2 ABI; no agreement planned. F2-CR-1 is optional future work. Front 3 uses the three-argument `stub_readfile` described in section 7.
 
-The console read model in rules 4 through 9 is imported by reference from INT-06 (#48) amendments 1-4 (signed content lives in issue #48; the closed draft PR #51 is superseded and no tree copy is normative) and F1-06 (#58); this document does not restate the ring mechanics.
+The console read model in rules 4 through 9 is imported by reference from INT-06 (#48) amendments 1-4 (signed in [`docs/int-console-io-contract.md`](docs/int-console-io-contract.md); the closed draft PR #51 is superseded) and F1-06 (#58); this document does not restate the ring mechanics.
 
 Ground truth for the 512-byte bound: the current kernel has no read/write implementation, so 512 is a Front 3 design limit chosen to fit one page and to keep a single-word count safe (design decision D4). The console bridge default is two 1024-byte rings per INT-06 (#48) amendments 1-4; F1-03/F1-05 consume the signed layout. The per-call cap stays `MAX_XFER = 512`.
 
@@ -355,7 +355,7 @@ Every standalone flat image carries a build-time entry wrapper that establishes 
 
 Front 3 does not define the TUI console mechanism. The requirements are frozen in the INT-06 bridge:
 
-- INT-06 (#48) amendments 1-4, requirements R1 through R6 (signed content lives in issue #48; the closed draft PR #51 is superseded and no tree copy is normative). Those amendments are normative for console mechanics; this document stays normative for the syscall ABI.
+- INT-06 (#48) amendments 1-4, requirements R1 through R6 (signed in [`docs/int-console-io-contract.md`](docs/int-console-io-contract.md); the closed draft PR #51 is superseded). Those amendments are normative for console mechanics; this document stays normative for the syscall ABI.
 - R1: a TUI mechanism delivers a typed line to `read` (6).
 - R2: `write` (7) output is displayed on a readable console surface.
 - R3: newline semantics are explicit; one line terminator byte.
@@ -465,7 +465,7 @@ The runner does not translate VA to PA for host-side dumps (`GetMemory` returns 
 
 | ID | Owner | Request | Blocks | Status |
 |---|---|---|---|---|
-| F1-CR-1 | Front 1 | Console input/output channel satisfying INT-06 (#48) amendments 1-4 R1 through R6 (signed content lives in issue #48; the closed draft PR #51 is superseded and no tree copy is normative), plus kernel `read` (6) and `write` (7) | F3-12 only | Open, non-blocking for F3-03 through F3-11 |
+| F1-CR-1 | Front 1 | Console input/output channel satisfying INT-06 (#48) amendments 1-4 R1 through R6 (signed in [`docs/int-console-io-contract.md`](docs/int-console-io-contract.md); the closed draft PR #51 is superseded), plus kernel `read` (6) and `write` (7) | F3-12 only | Open, non-blocking for F3-03 through F3-11 |
 | F1-CR-2 | Front 1 | Optional multi-argument syscalls using W7 and W6 as argument 2 and 3 | Nothing | Optional, non-blocking |
 | F1-CR-3 | Front 1 | `mem <addr> <len>` raw memory dump in the TUI | Mirror-primary acceptance criteria only | Open, non-blocking; in-guest asserts are normative (see #60) |
 | F1-CR-4 | Front 1 | Move the proposed console frame off PCB 1's page table; frame selection and reservation are owned by INT-06 (#48 amendment 1) and F1-03 (#55) | INT-06 | Open, non-blocking for F3-01 |
